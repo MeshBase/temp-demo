@@ -10,23 +10,29 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.ParcelUuid;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -83,17 +89,33 @@ public class BLECentral implements BLECentralI {
             BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
             this.scanner = adapter.getBluetoothLeScanner();
         }
+        ScanFilter filter = new ScanFilter.Builder()
+                .setServiceUuid(new ParcelUuid(BLEConstants.ServiceUUID))
+                .build();
+        List<ScanFilter> filters = new ArrayList<>();
+        filters.add(filter);
+
+        ScanSettings settings = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build();
 
         scanning = true;
         BLECentral self = this;
         scanner.startScan(
+                filters, settings,
                 new ScanCallback() {
                     @Override
                     public void onScanResult(int callbackType, ScanResult result) {
                         super.onScanResult(callbackType, result);
                         BluetoothDevice bluetoothDevice = result.getDevice();
+                        Log.d(TAG, "Potential device"+ bluetoothDevice.getName() + bluetoothDevice.getAddress());
                         if (avoidedAddresses.contains(bluetoothDevice.getAddress())) return;
                         self.connectPeripheral(bluetoothDevice);
+                    }
+                    @Override
+                    public void onScanFailed(int errorCode) {
+                        super.onScanFailed(errorCode);
+                        Log.e(TAG, "Scan failed with error code: " + errorCode);
                     }
                 }
         );
@@ -107,11 +129,34 @@ public class BLECentral implements BLECentralI {
             public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
                 super.onConnectionStateChange(gatt, status, newState);
                 if (status != BluetoothGatt.GATT_SUCCESS) {
-                    Log.d(TAG, "peripheral failed to either connect or disconnect. name :" + gatt.getDevice().getName());
+                    Log.d(TAG, "peripheral failed to either connect or disconnect. name :" + gatt.getDevice().getName() + gatt.getDevice().getAddress());
                     return;
                 }
-                if (newState == BluetoothGatt.STATE_CONNECTED) {
+
+                BluetoothGattService service = gatt.getService(BLEConstants.ServiceUUID);
+                if (service == null){
+                    Log.d(TAG, "no service discovery on device"+bluetoothDevice.getName());
+                    return;
+                }
+
+                BluetoothGattCharacteristic idChar = service.getCharacteristic(BLEConstants.IDCharacteristicUUID);
+                BluetoothGattCharacteristic dataChar = service.getCharacteristic(BLEConstants.DataCharacteristicUUID);
+                if (idChar == null || dataChar == null) {
+                    Log.d(TAG, "device doesn't have the "+(idChar==null?"id":"data")+" characteristic: " + bluetoothDevice.getName());
+                    gatt.close();
+                    return;
+                }
+
+                gatt.readCharacteristic(idChar);
+                try {
+                    sendViaCharacteristic(id.toString().getBytes(), gatt, BLEConstants.IDCharacteristicUUID);
+                } catch (Exception e) {
+                    Log.e(TAG, "couldn't exchange id with peripheral due to:" + e);
+                }
+                //TODO: clarify flow
+              if (newState == BluetoothGatt.STATE_CONNECTED) {
                     gatt.discoverServices();
+                    Log.d(TAG, "discovered peripheral, seeing if match" + gatt.getDevice().getName() + gatt.getDevice().getAddress());
                 } else if (newState == BluetoothGatt.STATE_DISCONNECTED && self.connections.containsKey(bluetoothDevice.getAddress())) {
                     try {
                         disconnectListener.onEvent(bluetoothDevice.getAddress());
@@ -146,6 +191,7 @@ public class BLECentral implements BLECentralI {
                     return;
                 }
 
+                enableNotifications(gatt, characteristic);
                 gatt.readCharacteristic(characteristic);
                 try {
                     sendViaCharacteristic(id.toString().getBytes(), gatt, BLEConstants.IDCharacteristicUUID);
@@ -154,6 +200,16 @@ public class BLECentral implements BLECentralI {
                 }
             }
 
+            private void enableNotifications(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
+                BluetoothGattDescriptor descriptor = characteristic.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805F9B34FB"));
+                if (descriptor != null) {
+                    descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                    gatt.writeDescriptor(descriptor);
+                    Log.d(TAG, "Notifications enabled");
+                } else {
+                    Log.e(TAG, "CCCD descriptor not found");
+                }
+            }
             @Override
             public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
                 super.onCharacteristicWrite(gatt, characteristic, status);

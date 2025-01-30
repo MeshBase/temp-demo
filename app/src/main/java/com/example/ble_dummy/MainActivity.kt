@@ -118,7 +118,7 @@ fun Greeting(
         horizontalAlignment = Alignment.CenterHorizontally // Center horizontally
     ) {
         Text(
-            text = "Hello $name!",
+            text = "Hello $name 2!",
             modifier = Modifier.padding(bottom = 16.dp) // Space below the greeting text
         )
         Button(onClick = onClick, modifier = Modifier.fillMaxWidth(0.8f)) {

@@ -9,13 +9,19 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.le.AdvertiseCallback;
+import android.bluetooth.le.AdvertiseData;
+import android.bluetooth.le.AdvertiseSettings;
+import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.ParcelUuid;
 import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
@@ -53,10 +59,15 @@ public class BlEPeripheral implements BLEPeripheralI {
                 PERMISSION_READ | PERMISSION_WRITE
         );
         dataCharacteristic = new BluetoothGattCharacteristic(
-                BLEConstants.IDCharacteristicUUID,
+                BLEConstants.DataCharacteristicUUID,
                 PROPERTY_READ | PROPERTY_WRITE | PROPERTY_NOTIFY,
                 PERMISSION_READ | PERMISSION_WRITE
         );
+        BluetoothGattDescriptor descriptor = new BluetoothGattDescriptor(
+                UUID.fromString("00002902-0000-1000-8000-00805F9B34FB"), // CCCD UUID
+                BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE
+        );
+        dataCharacteristic.addDescriptor(descriptor);
     }
 
     @Override
@@ -87,6 +98,30 @@ public class BlEPeripheral implements BLEPeripheralI {
         if (!serviceAdded){
             throw  new Exception("Service couldn't be created");
         }
+        BluetoothLeAdvertiser advertiser = adapter.getBluetoothLeAdvertiser();
+        AdvertiseSettings settings = new AdvertiseSettings.Builder()
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                .setConnectable(true)
+                .build();
+        AdvertiseData data = new AdvertiseData.Builder()
+                .setIncludeDeviceName(true)
+                .addServiceUuid(new ParcelUuid(BLEConstants.ServiceUUID))
+                .build();
+        advertiser.startAdvertising(settings, data,
+         new AdvertiseCallback() {
+            @Override
+            public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+                Log.d(TAG, "Advertising started successfully.");
+            }
+
+            @Override
+            public void onStartFailure(int errorCode) {
+                Log.e(TAG, "Advertising failed with error code: " + errorCode);
+            }
+        });
+
+
         Log.d(TAG, "started peripheral server");
     }
 
@@ -123,7 +158,13 @@ public class BlEPeripheral implements BLEPeripheralI {
             @Override
             public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
                 super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
+
                 Log.d(TAG, "unexpected read request from device:"+device.getName());
+                if (characteristic.getUuid().equals(BLEConstants.IDCharacteristicUUID)) {
+                    server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, id.toString().getBytes());
+                } else {
+                    server.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
+                }
             }
 
             @SuppressLint("MissingPermission")
@@ -135,8 +176,10 @@ public class BlEPeripheral implements BLEPeripheralI {
                     if (avoidedAddresses.contains(device.getAddress())) return;
 
                     //hooray
-                    UUID id = UUID.fromString(Arrays.toString(value));
+                    String uuidString = new String(value); // Convert byte array to string
+                    UUID id = UUID.fromString(uuidString); // Parse UUID from the string
                     BLEDevice bleDevice = new BLEDevice(id, device.getName(), device.getAddress());
+
                     //TODO: handle if send response fails
                     server.sendResponse(device,requestId,BluetoothGatt.GATT_SUCCESS,0,self.id.toString().getBytes());
                     devices.put(device.getAddress(), device);
@@ -145,8 +188,26 @@ public class BlEPeripheral implements BLEPeripheralI {
                 }else if (characteristic.getUuid() == BLEConstants.DataCharacteristicUUID){
                     Log.d(TAG, "data received from central:" + device.getName());
                     dataListener.onEvent(value, device.getAddress());
+                }else if (responseNeeded) {
+                    server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
                 }
 
+            }
+
+            @SuppressLint("MissingPermission")
+            @Override
+            public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+                super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
+                if (descriptor.getUuid().equals(UUID.fromString("00002902-0000-1000-8000-00805F9B34FB"))) {
+                    if (Arrays.equals(value, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)) {
+                        Log.d(TAG, "Notifications enabled for device: " + device.getName());
+                    } else if (Arrays.equals(value, BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE)) {
+                        Log.d(TAG, "Notifications disabled for device: " + device.getName());
+                    }
+                    if (responseNeeded) {
+                        server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
+                    }
+                }
             }
         };
     }
@@ -174,10 +235,12 @@ public class BlEPeripheral implements BLEPeripheralI {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            server.notifyCharacteristicChanged(device,dataCharacteristic,true, data);
+            int code = server.notifyCharacteristicChanged(device,dataCharacteristic,true, data);
+            Log.d(TAG, "likely successfully sent to central with name" + device.getName()+"and status:"+code);
         }else{
             dataCharacteristic.setValue(data);
-            server.notifyCharacteristicChanged(device,dataCharacteristic,true);
+            boolean isSuccess = server.notifyCharacteristicChanged(device,dataCharacteristic,true);
+            Log.d(TAG, "isSuccessful:"+ (isSuccess?"true":"false")+" when sending to central with name" + device.getName());
         }
 
     }
