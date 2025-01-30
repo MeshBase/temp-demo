@@ -12,6 +12,7 @@ public class BLEHandler extends ConnectionHandler {
     private final HashMap<String, BLEDevice> peripherals = new HashMap<>();
     private final HashMap<String, BLEDevice> centrals = new HashMap<>();
     String TAG = "My_BLEHandler";
+    private boolean started = false;
 
 
     BLEHandler(BLECentralI bleCentral, BLEPeripheralI blePeripheral, NeighborConnectedListener neighborConnectedListener, NeighborDisconnectedListener neighborDisconnectedListener, NeighborDiscoveredListener neighborDiscoveredListener, DisconnectedListener disconnectedListener, DataListener dataListener, NearbyDevicesListener nearbyDevicesListener) {
@@ -36,7 +37,10 @@ public class BLEHandler extends ConnectionHandler {
     @Override
     public void start() throws Exception {
         Log.d(TAG, "starting bluetooth handler");
-        stop();
+        if (started){
+            stop();
+        }
+        started = true;
 
         bleCentral.setListeners(
                 // on connect
@@ -63,7 +67,7 @@ public class BLEHandler extends ConnectionHandler {
                 },
                 //on data
                 (data, address) -> {
-                    if (!exists(address)) {
+                    if (!peripherals.containsKey(address)) {
                         //TODO: Make a universal error handling way
                         Log.e(TAG,"received data from unknown peripheral with address:"+address+" data:"+ Arrays.toString(data));
                         return;
@@ -111,6 +115,7 @@ public class BLEHandler extends ConnectionHandler {
     @Override
     public void stop() {
         try {
+            started = false;
             bleCentral.stop();
             blePeripheral.stopServer();
         } catch (Exception e) {
@@ -128,6 +133,7 @@ public class BLEHandler extends ConnectionHandler {
 
     @Override
     public void send(byte[] data) throws SendError {
+        if (!started) throw new SendError("BLEHandler not started");
 
         for (String address: peripherals.keySet()) {
             send(data, peripherals.get(address));
@@ -139,6 +145,7 @@ public class BLEHandler extends ConnectionHandler {
 
     @Override
     public void send(byte[] data, Device device) throws SendError {
+        if (!started) throw new SendError("BLEHandler not started");
         //TODO: make it take only O(1) time to find the device
         for (BLEDevice bleDevice : peripherals.values()) {
             if (bleDevice.uuid != device.uuid) continue;
