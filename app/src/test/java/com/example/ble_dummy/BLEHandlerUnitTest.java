@@ -6,8 +6,6 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
@@ -23,11 +21,10 @@ import android.util.Log;
 
 
 public class BLEHandlerUnitTest {
-    private static MockedStatic<Log> logMock;
 
     @BeforeClass
     public static void setup() {
-        logMock = Mockito.mockStatic(Log.class);
+        MockedStatic<Log> logMock = Mockito.mockStatic(Log.class);
         logMock.when(() -> Log.d(anyString(), anyString())).thenReturn(0);
         logMock.when(() -> Log.e(anyString(), anyString())).thenReturn(0);
         logMock.when(() -> Log.i(anyString(), anyString())).thenReturn(0);
