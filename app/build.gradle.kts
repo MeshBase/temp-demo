@@ -16,6 +16,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
     }
 
     buildTypes {
@@ -39,6 +40,7 @@ android {
     }
 }
 
+val mockitoAgent = configurations.create("mockitoAgent")
 dependencies {
 
     implementation(libs.androidx.core.ktx)
@@ -51,11 +53,25 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.fragment)
-    testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+//    testImplementation(libs.junit)
+        testImplementation(libs.junit)
+        testImplementation(libs.androidx.core)
+//        testImplementation("org.mockito:mockito-core:5.15.2")
+    testImplementation(libs.mockito)
+    mockitoAgent(libs.mockito) { isTransitive = false }
+        testImplementation(libs.mockito.kotlin)
+        testImplementation(libs.mockk)
+
 }
+//tasks {
+//    test {
+//        jvmArgs("-javaagent:${mockitoAgent.asPath}")
+//    }
+//}
