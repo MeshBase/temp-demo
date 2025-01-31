@@ -4,6 +4,7 @@ import static android.Manifest.permission.ACCESS_COARSE_LOCATION;
 import static android.Manifest.permission.ACCESS_FINE_LOCATION;
 import static android.Manifest.permission.BLUETOOTH;
 import static android.Manifest.permission.BLUETOOTH_ADMIN;
+import static android.Manifest.permission.BLUETOOTH_ADVERTISE;
 import static android.Manifest.permission.BLUETOOTH_CONNECT;
 import static android.Manifest.permission.BLUETOOTH_SCAN;
 
@@ -29,7 +30,7 @@ public class BLEEnabler implements BLEEnablerI {
     private String TAG = "my_BleEnabler";
 
     final private String[] oldVersionPermissions = new String[]{BLUETOOTH, BLUETOOTH_ADMIN, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION};
-    final private String[] recentVersionPermissions = new String[]{BLUETOOTH_SCAN, BLUETOOTH_CONNECT};
+    final private String[] recentVersionPermissions = new String[]{BLUETOOTH_SCAN, BLUETOOTH_CONNECT, BLUETOOTH_ADVERTISE};
     private boolean isRecent = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
 
     static private BLEEnabler instance = null;

@@ -65,7 +65,6 @@ public class BLECentral implements BLECentralI {
 
 
 
-    BluetoothDevice bd = null;
     @SuppressLint("MissingPermission")
     @Override
     public void startScan() throws Exception {
@@ -82,10 +81,8 @@ public class BLECentral implements BLECentralI {
                     @Override
                     public void onScanResult(int callbackType, ScanResult result) {
                         super.onScanResult(callbackType, result);
-                        if (result.getDevice().getName().equals("MyDevice")){
-                            self.bd = result.getDevice();
-                            Log.d(TAG, "serice uuids[0] is" +result.getScanRecord().getServiceUuids().get(0) );
-                            connectPeripheral(self.bd);
+                        if (self.isAllowed(result.getDevice().getAddress())){
+                            connectPeripheral(result.getDevice());
                         }
                     }
                     @Override
@@ -97,17 +94,18 @@ public class BLECentral implements BLECentralI {
         );
     }
 
-    BluetoothGatt gatt = null;
     @SuppressLint("MissingPermission")
     private void connectPeripheral(BluetoothDevice bluetoothDevice) {
-        BLECentral self = this;
-        gatt = bluetoothDevice.connectGatt(context, false, new BluetoothGattCallback() {
+        BluetoothGatt gatt = bluetoothDevice.connectGatt(context, false, new BluetoothGattCallback() {
             @Override
             public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
                 super.onConnectionStateChange(gatt, status, newState);
 
                 if (status != BluetoothGatt.GATT_SUCCESS) {
-                    Log.d(TAG, "peripheral failed to either connect or disconnect. name :" + gatt.getDevice().getName() + gatt.getDevice().getAddress());
+                    avoidedAddresses.add(gatt.getDevice().getAddress());
+                    if (bluetoothDevice.getName() != null) {
+                        Log.d(TAG, " a named peripheral failed to either connect or disconnect. Black listed! name :" + gatt.getDevice().getName() + gatt.getDevice().getAddress());
+                    }
                 }
                 if (status == BluetoothGatt.STATE_CONNECTED) {
                     Log.d(TAG, "peripheral kinda connected :" + gatt.getDevice().getName() + gatt.getDevice().getAddress());
@@ -143,31 +141,31 @@ public class BLECentral implements BLECentralI {
             public void onCharacteristicRead(@NonNull BluetoothGatt gatt, @NonNull BluetoothGattCharacteristic characteristic, int status) {
                 super.onCharacteristicRead(gatt, characteristic, status);
                 if (characteristic.getUuid() == BLEConstants.IDCharacteristicUUID) {
-                Log.d(TAG, "peripheral id is" + Arrays.toString(characteristic.getValue()));
+                    Log.d(TAG, "peripheral id is" + Arrays.toString(characteristic.getValue()));
                 }
             }
 
             @Override
             public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
                 super.onCharacteristicWrite(gatt, characteristic, status);
-                if (characteristic.getUuid() == BLEConstants.DataCharacteristicUUID){
-                    Log.d(TAG, "Wriet status:"+status);
+                if (characteristic.getUuid() == BLEConstants.DataCharacteristicUUID) {
+                    Log.d(TAG, "Wriet status:" + status);
                 }
             }
 
             @Override
             public void onCharacteristicChanged(@NonNull BluetoothGatt gatt, @NonNull BluetoothGattCharacteristic characteristic) {
                 super.onCharacteristicChanged(gatt, characteristic);
-                Log.d(TAG, "characterstic changed:"+ Arrays.toString(characteristic.getValue()));
+                Log.d(TAG, "characterstic changed:" + Arrays.toString(characteristic.getValue()));
             }
 
             @Override
             public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
                 super.onDescriptorWrite(gatt, descriptor, status);
-                if (status == BluetoothGatt.GATT_SUCCESS){
-                    Log.d(TAG, "descriptor write success on"+descriptor.getUuid()+" where char ="+descriptor.getCharacteristic());
-                }else{
-                    Log.d(TAG, "descriptor write fail on"+descriptor.getUuid()+" where char ="+descriptor.getCharacteristic()+"status="+status);
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    Log.d(TAG, "descriptor write success on" + descriptor.getUuid() + " where char =" + descriptor.getCharacteristic());
+                } else {
+                    Log.d(TAG, "descriptor write fail on" + descriptor.getUuid() + " where char =" + descriptor.getCharacteristic() + "status=" + status);
                 }
             }
         });
@@ -247,6 +245,10 @@ public class BLECentral implements BLECentralI {
     public void avoid(String address) {
         //Prevents new connections with this address, but old ones are not harmed
         avoidedAddresses.add(address);
+    }
+
+    private boolean isAllowed(String address){
+        return !avoidedAddresses.contains(address);
     }
 
     @Override
