@@ -10,15 +10,21 @@ import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.content.Context;
+import android.os.ParcelUuid;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -50,6 +56,7 @@ public class BLECentral implements BLECentralI {
     private UUID id;
 
     private final HashSet<String> avoidedAddresses = new HashSet<>();
+    private final HashSet<String> temporaryAvoidAddresses = new HashSet<>();
 
     BLECentral(Context context, UUID id) {
         this.context = context;
@@ -76,12 +83,24 @@ public class BLECentral implements BLECentralI {
         }
         scanning = true;
         BLECentral self = this;
+        ScanFilter serviceFilter = new ScanFilter.Builder()
+                .setServiceUuid(new ParcelUuid(BLEConstants.ServiceUUID))
+                .build();
+        List<ScanFilter> filters = new ArrayList<>();
+        filters.add(serviceFilter);
+        ScanSettings settings = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+                .build();
+
         scanner.startScan(
+                filters,settings,
                 new ScanCallback() {
                     @Override
                     public void onScanResult(int callbackType, ScanResult result) {
                         super.onScanResult(callbackType, result);
-                        if (self.isAllowed(result.getDevice().getAddress())){
+                        String address = result.getDevice().getAddress();
+                        if (self.isAllowed(address) && !temporaryAvoidAddresses.contains(address)){
+                            temporaryAvoidAddresses.add(address);
                             connectPeripheral(result.getDevice());
                         }
                     }
@@ -101,14 +120,23 @@ public class BLECentral implements BLECentralI {
             public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
                 super.onConnectionStateChange(gatt, status, newState);
 
-                if (status != BluetoothGatt.GATT_SUCCESS) {
-                    avoidedAddresses.add(gatt.getDevice().getAddress());
-                    if (bluetoothDevice.getName() != null) {
-                        Log.d(TAG, " a named peripheral failed to either connect or disconnect. Black listed! name :" + gatt.getDevice().getName() + gatt.getDevice().getAddress());
-                    }
-                }
-                if (status == BluetoothGatt.STATE_CONNECTED) {
-                    Log.d(TAG, "peripheral kinda connected :" + gatt.getDevice().getName() + gatt.getDevice().getAddress());
+                if (newState != BluetoothGatt.STATE_CONNECTED) {
+                    int seconds = 4;
+                    Log.d(TAG, " a peripheral could not connect. Black listed for "+seconds+"seconds! name :" + bluetoothDevice.getName() + bluetoothDevice.getAddress()+"status:"+status);
+                    gatt.close();
+                    new Thread(()->{
+                        //delay as suggested in https://medium.com/android-news/lessons-for-first-time-android-bluetooth-le-developers-i-learned-the-hard-way-fee07646624
+                        try {
+                            Thread.sleep(4000);
+                            temporaryAvoidAddresses.remove(bluetoothDevice.getAddress());
+                            Log.d(TAG, bluetoothDevice.getName()+"not in black list anymore");
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+                }else{
+                    Log.d(TAG, "peripheral kinda connected :" + bluetoothDevice.getName() + bluetoothDevice.getAddress()+" now discovering services");
+                    gatt.discoverServices();
                 }
             }
 
@@ -117,6 +145,8 @@ public class BLECentral implements BLECentralI {
                 super.onServicesDiscovered(gatt, status);
                 BluetoothGattService service = gatt.getService(BLEConstants.ServiceUUID);
                 BluetoothGattCharacteristic idCharacteristic = service.getCharacteristic(BLEConstants.IDCharacteristicUUID);
+
+                Log.d(TAG, "service kinda discovered for "+bluetoothDevice.getName());
                 if (idCharacteristic == null) {
                     boolean success = gatt.readCharacteristic(idCharacteristic);
                     Log.d(TAG, "read characteristic success:" + success);
@@ -128,7 +158,7 @@ public class BLECentral implements BLECentralI {
                     return;
                 }
                 gatt.setCharacteristicNotification(dataCharacteristic, true);
-                BluetoothGattDescriptor desc = dataCharacteristic.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"));
+                BluetoothGattDescriptor desc = dataCharacteristic.getDescriptor(BLEConstants.CCCD);
                 if (desc == null) {
                     Log.d(TAG, "descriptor not found");
                     return;
@@ -168,10 +198,9 @@ public class BLECentral implements BLECentralI {
                     Log.d(TAG, "descriptor write fail on" + descriptor.getUuid() + " where char =" + descriptor.getCharacteristic() + "status=" + status);
                 }
             }
-        });
+        }, BluetoothDevice.TRANSPORT_LE);
 
 
-        gatt.discoverServices();
     }
 
     @SuppressLint("MissingPermission")
@@ -202,6 +231,7 @@ public class BLECentral implements BLECentralI {
 
     @SuppressLint("MissingPermission")
     private void sendViaCharacteristic(byte[] data, BluetoothGatt gatt) throws Exception {
+        Log.d(TAG, "sending data:" + Arrays.toString(data));
         BluetoothGattService service = gatt.getService(BLEConstants.ServiceUUID);
         if (service == null)
             throw new Exception("couldn't find  gatt service for device with address:" + gatt.getDevice().getAddress() + " to send data");

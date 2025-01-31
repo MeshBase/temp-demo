@@ -65,6 +65,7 @@ class BLEConstants {
     static final UUID ServiceUUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb");
     static final UUID IDCharacteristicUUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fc");
     static final  UUID DataCharacteristicUUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fd");
+    static  final  UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 }
 
 interface BLEEnabledListener{

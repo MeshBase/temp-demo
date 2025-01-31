@@ -109,6 +109,28 @@ public class BlEPeripheral implements BLEPeripheralI {
             }
 
             @Override
+            public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+
+                if (descriptor.getUuid().equals(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))) {
+                    if (Arrays.equals(value, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)) {
+                        Log.d(TAG, "Client enabled notifications");
+                    } else if (Arrays.equals(value, BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE)) {
+                        Log.d(TAG, "Client disabled notifications");
+                    }
+
+                    if (responseNeeded) {
+                        server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
+                    }
+                } else {
+                    Log.d(TAG, "Unknown descriptor write request");
+                    if (responseNeeded) {
+                        server.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, value);
+                    }
+                }
+            }
+
+
+            @Override
             public void onExecuteWrite(BluetoothDevice device, int requestId, boolean execute) {
                 super.onExecuteWrite(device, requestId, execute);
                 Log.d(TAG, "execute write request, dont know how to handle!!");
@@ -117,13 +139,22 @@ public class BlEPeripheral implements BLEPeripheralI {
             @Override
             public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
                 super.onConnectionStateChange(device, status, newState);
-                if (status != BluetoothGatt.GATT_SUCCESS) {
-                    Log.d(TAG, "Connection state has failed!!");
+
+                if (newState != BluetoothGatt.STATE_CONNECTED) {
+                    Log.d(TAG, "Central not connected: "+device.getName()+newState);
                     return;
                 }
 
+
+                String nameTab = "Galaxy Tab A";
+                String namePhone = "Galaxy A20s";
+                if (!namePhone.equals(device.getName())){
+                    Log.d(TAG, "preventing connection with "+device.getName()+device.getAddress());
+                    server.cancelConnection(device);
+                    return;
+                }
                 Log.d(TAG, "Connection state has worked!!"+device.getName()+device.getAddress());
-                connectListener.onEvent(new BLEDevice(null, device.getName(), device.getAddress()));
+//                connectListener.onEvent(new BLEDevice(null, device.getName(), device.getAddress()));
             }
         });
 
@@ -142,17 +173,20 @@ public class BlEPeripheral implements BLEPeripheralI {
                 PERMISSION_READ | PERMISSION_WRITE
         );
 
-        BluetoothGattDescriptor descriptor = new BluetoothGattDescriptor(
-                UUID.fromString("00002902-0000-1000-8000-00805F9B34FB"), // CCCD UUID
-                BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE
-        );
+        BluetoothGattDescriptor descriptor = new BluetoothGattDescriptor( BLEConstants.CCCD,
+BluetoothGattDescriptor.PERMISSION_READ |
+            BluetoothGattDescriptor.PERMISSION_WRITE );
 
+        descriptor.setValue(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE);
         dataCharacteristic.addDescriptor(descriptor);
+
         service.addCharacteristic(idCharacteristic);
         service.addCharacteristic(dataCharacteristic);
         boolean added = server.addService(service);
                 if (!added){
                     Log.d(TAG, "Could not add service");
+                }else {
+                    Log.d(TAG, "added service");
                 }
         //
 
