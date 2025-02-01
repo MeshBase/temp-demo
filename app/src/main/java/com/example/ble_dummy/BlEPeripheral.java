@@ -110,19 +110,18 @@ public class BlEPeripheral implements BLEPeripheralI {
 
             @Override
             public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
-
                 if (descriptor.getUuid().equals(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))) {
                     if (Arrays.equals(value, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)) {
-                        Log.d(TAG, "Client enabled notifications");
+                        Log.d(TAG, "Client enabled notifications"+device.getName());
                     } else if (Arrays.equals(value, BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE)) {
-                        Log.d(TAG, "Client disabled notifications");
+                        Log.d(TAG, "Client disabled notifications"+device.getName());
                     }
 
                     if (responseNeeded) {
                         server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
                     }
                 } else {
-                    Log.d(TAG, "Unknown descriptor write request");
+                    Log.d(TAG, "Unknown descriptor write request"+device.getName());
                     if (responseNeeded) {
                         server.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, value);
                     }
@@ -148,7 +147,7 @@ public class BlEPeripheral implements BLEPeripheralI {
 
                 String nameTab = "Galaxy Tab A";
                 String namePhone = "Galaxy A20s";
-                if (!namePhone.equals(device.getName())){
+                if (!nameTab.equals(device.getName())){
                     Log.d(TAG, "preventing connection with "+device.getName()+device.getAddress());
                     server.cancelConnection(device);
                     return;

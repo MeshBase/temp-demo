@@ -38,18 +38,7 @@ public class BLECentral implements BLECentralI {
     private BluetoothLeScanner scanner;
     private final Context context;
 
-    private static class Connection {
-        BluetoothDevice device;
-        BluetoothGatt gatt;
-
-        Connection(BluetoothDevice d, BluetoothGatt g) {
-            this.device = d;
-            this.gatt = g;
-        }
-    }
-
-    //TODO: use gatt instead of the Connection class
-    private final HashMap<String, Connection> connections = new HashMap<>();
+    private final HashMap<String, BluetoothGatt> gattConnections = new HashMap<>();
 
 
     private String TAG = "my_BLE_Central";
@@ -133,7 +122,7 @@ public class BLECentral implements BLECentralI {
                         } catch (InterruptedException e) {
                             throw new RuntimeException(e);
                         }
-                    });
+                    }).start();
                 }else{
                     Log.d(TAG, "peripheral kinda connected :" + bluetoothDevice.getName() + bluetoothDevice.getAddress()+" now discovering services");
                     gatt.discoverServices();
@@ -143,26 +132,15 @@ public class BLECentral implements BLECentralI {
             @Override
             public void onServicesDiscovered(BluetoothGatt gatt, int status) {
                 super.onServicesDiscovered(gatt, status);
-                BluetoothGattService service = gatt.getService(BLEConstants.ServiceUUID);
-                BluetoothGattCharacteristic idCharacteristic = service.getCharacteristic(BLEConstants.IDCharacteristicUUID);
-
                 Log.d(TAG, "service kinda discovered for "+bluetoothDevice.getName());
-                if (idCharacteristic == null) {
-                    boolean success = gatt.readCharacteristic(idCharacteristic);
-                    Log.d(TAG, "read characteristic success:" + success);
-                }
 
+                //Assume no risk of null characterstic due to the service filter when scanning
+                BluetoothGattService service = gatt.getService(BLEConstants.ServiceUUID);
                 BluetoothGattCharacteristic dataCharacteristic = service.getCharacteristic(BLEConstants.DataCharacteristicUUID);
-                if (dataCharacteristic == null) {
-                    Log.d(TAG, "data characteristic not found");
-                    return;
-                }
+
                 gatt.setCharacteristicNotification(dataCharacteristic, true);
                 BluetoothGattDescriptor desc = dataCharacteristic.getDescriptor(BLEConstants.CCCD);
-                if (desc == null) {
-                    Log.d(TAG, "descriptor not found");
-                    return;
-                }
+
                 desc.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                 gatt.writeDescriptor(desc);
             }
@@ -171,8 +149,12 @@ public class BLECentral implements BLECentralI {
             public void onCharacteristicRead(@NonNull BluetoothGatt gatt, @NonNull BluetoothGattCharacteristic characteristic, int status) {
                 super.onCharacteristicRead(gatt, characteristic, status);
                 if (characteristic.getUuid() == BLEConstants.IDCharacteristicUUID) {
-                    Log.d(TAG, "peripheral id is" + Arrays.toString(characteristic.getValue()));
+                    Log.d(TAG, "peripheral id is" + Arrays.toString(characteristic.getValue())+"added connection");
+                    gattConnections.put(bluetoothDevice.getAddress(), gatt);
+                    UUID id = UUID.fromString(Arrays.toString(characteristic.getValue()));
+                    connectListener.onEvent(new BLEDevice(id, bluetoothDevice.getName(), bluetoothDevice.getAddress()));
                 }
+
             }
 
             @Override
@@ -193,9 +175,16 @@ public class BLECentral implements BLECentralI {
             public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
                 super.onDescriptorWrite(gatt, descriptor, status);
                 if (status == BluetoothGatt.GATT_SUCCESS) {
-                    Log.d(TAG, "descriptor write success on" + descriptor.getUuid() + " where char =" + descriptor.getCharacteristic());
+                    gattConnections.put(bluetoothDevice.getAddress(), gatt);
+                    Log.d(TAG, "descriptor write success on" + descriptor.getUuid() + " where char =" + descriptor.getCharacteristic()+"now reading id");
+                    BluetoothGattService service = gatt.getService(BLEConstants.ServiceUUID);
+                    BluetoothGattCharacteristic idCharacteristic = service.getCharacteristic(BLEConstants.IDCharacteristicUUID);
+
+                    boolean success = gatt.readCharacteristic(idCharacteristic);
+                    Log.d(TAG, "read id characteristic success:" + success+ "value:"+Arrays.toString(idCharacteristic.getValue()));
                 } else {
                     Log.d(TAG, "descriptor write fail on" + descriptor.getUuid() + " where char =" + descriptor.getCharacteristic() + "status=" + status);
+                    gatt.close();
                 }
             }
         }, BluetoothDevice.TRANSPORT_LE);
@@ -222,11 +211,11 @@ public class BLECentral implements BLECentralI {
     @SuppressLint("MissingPermission")
     @Override
     public void send(byte[] data, String address) throws Exception {
-        Connection con = connections.get(address);
-        if (con == null)
+        BluetoothGatt gatt = gattConnections.get(address);
+        if (gatt == null)
             throw new Exception("couldn't find device with address:" + address + " to send to");
 
-        sendViaCharacteristic(data, con.gatt);
+        sendViaCharacteristic(data, gatt);
     }
 
     @SuppressLint("MissingPermission")
@@ -247,13 +236,13 @@ public class BLECentral implements BLECentralI {
     //returns true if it found the device to disconnect
     @SuppressLint("MissingPermission")
     private boolean disconnect(String address) {
-        Connection con = connections.get(address);
-        if (con == null) {
+        BluetoothGatt gatt = gattConnections.get(address);
+        if (gatt == null) {
             return false;
         }
-        con.gatt.close();
-        connections.remove(address);
-        Log.d(TAG, "device: " + con.device.getName() + "has disconnected");
+        gatt.close();
+        gattConnections.remove(address);
+        Log.d(TAG, "device: " + gatt.getDevice().getName() + "has disconnected");
         return true;
     }
 
@@ -261,8 +250,8 @@ public class BLECentral implements BLECentralI {
     @Override
     public void stop() throws Exception {
         stopScan();
-        for (Map.Entry<String, Connection> entry : connections.entrySet()) {
-            String address = entry.getValue().device.getAddress();
+        for (Map.Entry<String, BluetoothGatt> entry : gattConnections.entrySet()) {
+            String address = entry.getValue().getDevice().getAddress();
             boolean successful = disconnect(address);
             if (!successful) {
                 throw new Exception("Could'nt stop BLECentral as device with address:" + address + " couldn't be disconnected");
