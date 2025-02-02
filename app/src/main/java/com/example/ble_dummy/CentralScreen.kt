@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 fun CentralScreen() {
     val context = LocalContext.current
     var devices = remember { mutableStateListOf<BluetoothDevice>() }
+    val TAG = "my_central screen"
 
     // 1. Create callback FIRST
     val connectionCallback = remember {
@@ -30,22 +32,25 @@ fun CentralScreen() {
             override fun onDeviceFound(device: BluetoothDevice) {
                 if (!devices.contains(device)) {
                     devices.add(device)
-                    android.util.Log.d("UI", "Device added: ${device.name}")
+//                    Log.d(TAG, "Device found: ${device.name}")
                 }
+
                 Toast.makeText(context, "Found: ${device.name}", Toast.LENGTH_SHORT).show()
             }
 
             override fun onMessageReceived(message: String) {
                 Toast.makeText(context, "Received: $message", Toast.LENGTH_LONG).show()
-                // No direct bleCentral reference here
+                Log.d(TAG, "Message recieved: $message")
             }
 
             override fun onDeviceConnected(device: BluetoothDevice?) {
-                Toast.makeText(context, "Connected to $device.name", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Connected to ${device?.name}", Toast.LENGTH_SHORT).show()
+                Log.d(TAG, "Device connected: ${device?.name}")
             }
 
             override fun onMessageForwarded(message: String) {
                 Toast.makeText(context, "Forwarded: $message", Toast.LENGTH_SHORT).show()
+                Log.d(TAG, "Forwarded: ${message}")
             }
         }
     }

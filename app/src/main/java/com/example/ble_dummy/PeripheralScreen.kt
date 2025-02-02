@@ -16,17 +16,18 @@ fun PeripheralScreen() {
     val context = LocalContext.current
     var message by remember { mutableStateOf("") }
     var connectionStatus by remember { mutableStateOf("Not connected") }
+    val TAG = "my_peripheral screen"
 
     val blePeripheral = remember {
         BLEPeripheral(context, object : BLEPeripheral.MessageCallback {
             override fun onDeviceConnected(deviceName: String) {
                 connectionStatus = "Connected to: $deviceName"
-                Log.d("UI", "Central connected: $deviceName")
+                Log.d(TAG, "Central connected: $deviceName")
                 Toast.makeText(context, "Central Connected: $deviceName", Toast.LENGTH_SHORT).show()
             }
 
             override fun onMessageSent(message: String) {
-                Log.d("UI", "Message sent: $message")
+                Log.d(TAG, "Message sent: $message")
                 Toast.makeText(context, "Message sent: $message", Toast.LENGTH_SHORT).show()
             }
         })

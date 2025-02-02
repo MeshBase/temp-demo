@@ -13,6 +13,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
+<!--    hope works-->
+    <uses-permission android:name="com.samsung.android.providers.context.permission.WRITE_USE_APP_FEATURE_SURVEY"/>
+    <!-- Samsung-specific permissions -->
+    <uses-permission android:name="com.samsung.android.app.telephonyui.permission.SYSTEM_ALERT_WINDOW"/>
+
 
     <application
         android:allowBackup="true"

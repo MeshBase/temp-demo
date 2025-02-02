@@ -4,6 +4,8 @@ import android.annotation.SuppressLint;
 import android.bluetooth.*;
         import android.bluetooth.le.*;
         import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import java.util.*;
 
@@ -44,7 +46,16 @@ public class BLECentral {
 
     @SuppressLint("MissingPermission")
     public void connectToDevice(BluetoothDevice device) {
-        device.connectGatt(context, false, gattCallback);
+        // Clear existing connection first
+        BluetoothGatt existingGatt = connectedDevices.get(device.getAddress());
+        if (existingGatt != null) {
+            existingGatt.disconnect();
+            existingGatt.close();
+        }
+
+        // Retry with shorter interval
+        device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
+        Log.d(TAG, "Attempting connection to: " + device.getAddress());
     }
 
     @SuppressLint("MissingPermission")
@@ -64,6 +75,7 @@ public class BLECentral {
         public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
             callback.onDeviceFound(device);
+            scanner.stopScan(this);//Stop now
         }
     };
 
@@ -71,12 +83,22 @@ public class BLECentral {
         @SuppressLint("MissingPermission")
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-            Log.d(TAG, "Connection state changed: " + newState + " for " + gatt.getDevice().getAddress());
+            Log.d(TAG, "Connection state changed - Status: " + status +
+                    ", New State: " + newState +
+                    ", Device: " + gatt.getDevice().getAddress()+gatt.getDevice().getName());
+
             String address = gatt.getDevice().getAddress();
             if (newState == BluetoothGatt.STATE_CONNECTED) {
                 connectedDevices.put(address, gatt);
                 gatt.discoverServices();
                 callback.onDeviceConnected(gatt.getDevice());
+            }
+            if (status == 133) { // Handle specific error
+                Log.w(TAG, "Status 133 detected - retrying connection");
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    gatt.close();
+                    connectToDevice(gatt.getDevice());
+                }, 500); // Retry after 500ms
             }
         }
 
