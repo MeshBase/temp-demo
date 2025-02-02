@@ -8,6 +8,8 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+
+import java.lang.reflect.Method;
 import java.util.*;
 
 public class BLECentral {
@@ -59,11 +61,48 @@ public class BLECentral {
         }
     }
 
+    private final Map<String, Integer> retryCounts = new HashMap<>();
+
+    private void handleConnectionRetry(BluetoothDevice device) {
+        String address = device.getAddress();
+        int count = retryCounts.getOrDefault(address, 0);
+
+        if (count < 3) { // Max 3 retries
+            retryCounts.put(address, count + 1);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                connectToDevice(device);
+            }, (long) Math.pow(2, count) * 1000); // Exponential backoff
+        } else {
+            Log.w(TAG, "Max retries reached for " + address);
+            retryCounts.remove(address);
+        }
+    }
+
     @SuppressLint("MissingPermission")
     public void connectToDevice(BluetoothDevice device) {
-        // Samsung requires explicit transport type
-        if (Build.MANUFACTURER.equalsIgnoreCase("samsung")) {
-            device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
+        final boolean isSamsung = Build.MANUFACTURER.equalsIgnoreCase("samsung");
+        if (isSamsung) {
+            try {
+                // Use reflection for Samsung-specific connection parameters
+                Method connectMethod = BluetoothDevice.class.getMethod("connectGatt",
+                        Context.class,
+                        boolean.class,
+                        BluetoothGattCallback.class,
+                        int.class,
+                        int.class,
+                        int.class);
+
+                connectMethod.invoke(device,
+                        context,
+                        false,
+                        gattCallback,
+                        BluetoothDevice.TRANSPORT_LE,
+                        BluetoothDevice.PHY_LE_1M_MASK,
+                        BluetoothDevice.ADDRESS_TYPE_RANDOM);
+            } catch (Exception e) {
+                Log.e(TAG, "Samsung connection failed, falling back", e);
+                device.connectGatt(context, false, gattCallback);
+            }
         } else {
             device.connectGatt(context, false, gattCallback);
         }
@@ -71,10 +110,11 @@ public class BLECentral {
         // Add connection timeout
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             if (!connectedDevices.containsKey(device.getAddress())) {
-                Log.w(TAG, "Connection timeout for " + device.getAddress());
+                Log.w(TAG, "Connection timeout, retrying...");
                 cancelConnection(device);
+                connectToDevice(device); // Retry with backoff
             }
-        }, 8000); // 8-second timeout for Samsung
+        }, isSamsung ? 8000 : 5000); // Longer timeout for Samsung
     }
 
     @SuppressLint("MissingPermission")
@@ -117,10 +157,7 @@ public class BLECentral {
             }
             if (status == 133) { // Handle specific error
                 Log.w(TAG, "Status 133 detected - retrying connection");
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    gatt.close();
-                    connectToDevice(gatt.getDevice());
-                }, 500); // Retry after 500ms
+                handleConnectionRetry(gatt.getDevice());
             }
         }
 

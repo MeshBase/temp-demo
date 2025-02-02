@@ -112,6 +112,20 @@ public class BLEPeripheral {
     @SuppressLint("MissingPermission")
     public void startAdvertising() {
         Log.d(TAG, "Starting advertising");
+        stopAdvertising();
+        int txPower = Build.MANUFACTURER.equalsIgnoreCase("samsung")
+                ? AdvertiseSettings.ADVERTISE_TX_POWER_HIGH
+                : AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM;
+
+        AdvertiseSettings settings = new AdvertiseSettings.Builder()
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setTxPowerLevel(txPower)
+                .setConnectable(true)
+                .setTimeout(0) // No timeout for Samsung
+                .build();
+
+        // Start advertising with retry logic
+
         AdvertiseSettings.Builder settingsBuilder = new AdvertiseSettings.Builder()
                 .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
                 .setConnectable(true);
@@ -127,7 +141,6 @@ public class BLEPeripheral {
             settingsBuilder.setTimeout(0); // Disable timeout
         }
 
-        AdvertiseSettings settings = settingsBuilder.build();
 
         BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser()
                 .startAdvertising(settings, data, advertisementCallback);
