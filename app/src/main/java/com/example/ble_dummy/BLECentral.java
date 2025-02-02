@@ -27,9 +27,12 @@ public class BLECentral {
         void onDeviceFound(BluetoothDevice device);
         void onMessageReceived(String message);
         void onDeviceConnected(BluetoothDevice device);
+        void  onDeviceDisconnected(BluetoothDevice device);
 
         void onMessageForwarded(String message);
     }
+    public final Map<String, Integer> retryCount = new HashMap<>();
+    private static final int MAX_RETRIES = 3;
 
     public BLECentral(Context context, ConnectionCallback callback) {
         this.context = context;
@@ -47,79 +50,27 @@ public class BLECentral {
         );
         Log.d(TAG, "Scanning started");
     }
-    @SuppressLint("MissingPermission")
-    public void cancelConnection(BluetoothDevice device) {
-        reconnectMap.put(device.getAddress(), false);
-        String address = device.getAddress();
-        BluetoothGatt gatt = connectedDevices.get(address);
 
-        if (gatt != null) {
-            gatt.disconnect();
-            gatt.close();
-            connectedDevices.remove(address);
-            Log.d(TAG, "Connection canceled for: " + address);
-        } else {
-            Log.w(TAG, "No active connection to cancel for: " + address);
-        }
-    }
 
     private final Map<String, Integer> retryCounts = new HashMap<>();
     private final Set<String> connectingDevices = new HashSet<>();
 
-    private void handleConnectionRetry(BluetoothDevice device) {
-        String address = device.getAddress();
-        int count = retryCounts.getOrDefault(address, 0);
-
-        if (count < 3) { // Max 3 retries
-            retryCounts.put(address, count + 1);
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                connectToDevice(device);
-            }, (long) Math.pow(2, count) * 1000); // Exponential backoff
-        } else {
-            Log.w(TAG, "Max retries reached for " + address);
-            retryCounts.remove(address);
-        }
-    }
 
     @SuppressLint("MissingPermission")
     public void connectToDevice(BluetoothDevice device) {
-        reconnectMap.put(device.getAddress(), true);
-        final boolean isSamsung = Build.MANUFACTURER.equalsIgnoreCase("samsung");
-        if (isSamsung) {
-            try {
-                // Use reflection for Samsung-specific connection parameters
-                Method connectMethod = BluetoothDevice.class.getMethod("connectGatt",
-                        Context.class,
-                        boolean.class,
-                        BluetoothGattCallback.class,
-                        int.class,
-                        int.class,
-                        int.class);
+        String address = device.getAddress();
 
-                connectMethod.invoke(device,
-                        context,
-                        false,
-                        gattCallback,
-                        BluetoothDevice.TRANSPORT_LE,
-                        BluetoothDevice.PHY_LE_1M_MASK,
-                        BluetoothDevice.ADDRESS_TYPE_RANDOM);
-            } catch (Exception e) {
-                Log.e(TAG, "Samsung connection failed, falling back", e);
-                device.connectGatt(context, false, gattCallback);
-            }
-        } else {
-            device.connectGatt(context, false, gattCallback);
+        // Prevent duplicate connection attempts
+        if (connectingDevices.contains(address)) {
+            Log.d(TAG, "Already connecting to: " + address);
+            return;
         }
 
-        // Add connection timeout
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (!connectedDevices.containsKey(device.getAddress())) {
-                Log.w(TAG, "Connection timeout, retrying...");
-                cancelConnection(device);
-                connectToDevice(device); // Retry with backoff
-            }
-        }, isSamsung ? 8000 : 5000); // Longer timeout for Samsung
+        connectingDevices.add(address);
+        device.connectGatt(context, false, gattCallback);
     }
+
+
 
     @SuppressLint("MissingPermission")
     public void sendMessageToAllDevices(String message) {
@@ -132,6 +83,24 @@ public class BLECentral {
         callback.onMessageForwarded(message); // Notify UI
     }
 
+
+    @SuppressLint("MissingPermission")
+    private void attemptReconnect(BluetoothDevice device) {
+        String address = device.getAddress();
+        int count = retryCount.getOrDefault(address, 0);
+
+        if (count < MAX_RETRIES) {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                Log.d(TAG, "Reconnecting attempt " + (count+1) + "/3");
+                device.connectGatt(context, false, gattCallback);
+                retryCount.put(address, count + 1);
+            }, 5000); // 5-second delay
+        } else {
+            Log.w(TAG, "Max retries reached for " + address);
+            retryCount.remove(address);
+        }
+    }
+
     private final ScanCallback scanCallback = new ScanCallback() {
         @SuppressLint("MissingPermission")
         @Override
@@ -142,38 +111,27 @@ public class BLECentral {
         }
     };
 
-    private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
 
-            BluetoothDevice device = gatt.getDevice();
-            String deviceName = device.getName() != null ? device.getName() : "Unknown Device";
-            Log.d(TAG, "Connection state changed - Status: " + status +
-                    ", New State: " + newState +
-                    ", Device: " + gatt.getDevice().getAddress()+deviceName);
+        private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
+            @SuppressLint("MissingPermission")
+            @Override
+            public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+                String address = gatt.getDevice().getAddress();
 
-            String address = gatt.getDevice().getAddress();
-            if (newState == BluetoothGatt.STATE_CONNECTED) {
-                connectedDevices.put(address, gatt);
-                gatt.discoverServices();
-                callback.onDeviceConnected(gatt.getDevice());
-            }
-            if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                if (reconnectMap.getOrDefault(address, false)) {
-                    Log.w(TAG, "Attempting reconnect to: " + address);
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        connectToDevice(gatt.getDevice());
-                    }, 2000); // 2-second delay before reconnect
-                }
-            }
-            if (status == 133) { // Handle specific error
-                Log.w(TAG, "Status 133 detected - retrying connection");
-                handleConnectionRetry(gatt.getDevice());
-            }
-        }
+                if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                    Log.w(TAG, "Disconnected from: " + address);
+                    attemptReconnect(gatt.getDevice());
+                    callback.onDeviceDisconnected(gatt.getDevice());
+                }else{
+                    callback.onDeviceConnected(gatt.getDevice());
+                    Log.d(TAG, "Connected to: " + address);
+                    connectedDevices.put(address, gatt);
+                    gatt.discoverServices();
 
-        @Override
+            }
+        };
+
+           @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             String message = new String(characteristic.getValue());
             callback.onMessageReceived(message);

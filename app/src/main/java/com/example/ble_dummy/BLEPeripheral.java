@@ -10,7 +10,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class BLEPeripheral {
@@ -26,10 +28,33 @@ public class BLEPeripheral {
     private MessageCallback callback;
     private BluetoothManager btManager; // Add this
     private static final boolean IS_SAMSUNG = Build.MANUFACTURER.equalsIgnoreCase("samsung");
+    private final Set<String> connectedDevices = new HashSet<>();
+
+        private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
+
+            @SuppressLint("MissingPermission")
+            public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId,
+                                                     BluetoothGattCharacteristic characteristic, boolean preparedWrite,
+                                                     boolean responseNeeded, int offset, byte[] value) {
+                String message = new String(value);
+                callback.onMessageSent(message);
+                Log.d(TAG, "Received message from " + device.getName() + ": " + message);
+            }            @Override
+            public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
+                if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                    Log.d(TAG, "Central disconnected, restarting advertising");
+
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        startAdvertising();
+                    }, 1000);
+                }
+            }
+        };
 
     public interface MessageCallback {
         void onMessageSent(String message);
         void onDeviceConnected(String deviceName);
+        void  onDeviceDisconnected(String deviceName);
     }
     private AdvertiseCallback  advertisementCallback = new AdvertiseCallback() {
         @Override
@@ -69,37 +94,7 @@ public class BLEPeripheral {
     @SuppressLint("MissingPermission")
     private void setupGattServer() {
         btManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
-        gattServer = btManager.openGattServer(context, new BluetoothGattServerCallback() {
-            @Override
-            public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
-                String deviceName = device.getName() != null ? device.getName() : "Unknown Device";
-                Log.d(TAG, "Peripheral connection state - Status: " + status +
-                        ", New State: " + newState +
-                        ", Device: " + device.getAddress()+deviceName);
-                if (newState == BluetoothGatt.STATE_CONNECTED) {
-                    callback.onDeviceConnected(deviceName);
-                }
-                // Samsung-specific workaround
-                if (status == 133 && IS_SAMSUNG) {
-                    Log.d(TAG, "Samsung workaround: restarting advertising");
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        stopAdvertising();
-                        startAdvertising();
-                    }, 1000);
-                }
-            }
-
-
-
-            @Override
-            public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId,
-                                                     BluetoothGattCharacteristic characteristic, boolean preparedWrite,
-                                                     boolean responseNeeded, int offset, byte[] value) {
-                String message = new String(value);
-                callback.onMessageSent(message);
-                Log.d(TAG, "Received message from " + device.getName() + ": " + message);
-            }
-        });
+        gattServer = btManager.openGattServer(context, gattServerCallback);
 
         BluetoothGattService service = new BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
 

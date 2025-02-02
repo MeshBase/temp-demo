@@ -54,6 +54,14 @@ fun CentralScreen() {
                 }
             }
 
+            override fun onDeviceDisconnected(device: BluetoothDevice?) {
+
+                Log.d(TAG, "Device disconnected: ${device?.name}")
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Disconnected to ${device?.name}", Toast.LENGTH_SHORT).show()
+                }
+            }
+
             override fun onMessageForwarded(message: String) {
                 Log.d(TAG, "Forwarded: ${message}")
                 Handler(Looper.getMainLooper()).post {
@@ -80,6 +88,7 @@ fun CentralScreen() {
                         modifier = Modifier.weight(1f)
                     )
                     Button(onClick = {
+                        bleCentral.retryCount.clear() // Reset on manual connect
                         bleCentral.connectToDevice(device)
                         Toast.makeText(context, "Connecting...", Toast.LENGTH_SHORT).show()
                     }) {

@@ -1,6 +1,8 @@
 package com.example.ble_dummy
 // PeripheralScreen.kt
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -23,12 +25,28 @@ fun PeripheralScreen() {
             override fun onDeviceConnected(deviceName: String) {
                 connectionStatus = "Connected to: $deviceName"
                 Log.d(TAG, "Central connected: $deviceName")
-                Toast.makeText(context, "Central Connected: $deviceName", Toast.LENGTH_SHORT).show()
+
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Central Connected: $deviceName", Toast.LENGTH_SHORT)
+                        .show()
+                }
+            }
+
+            override fun onDeviceDisconnected(deviceName: String?) {
+                connectionStatus = "not connected"
+                Log.d(TAG, "disconnected to: $deviceName")
+
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Central disonnected: $deviceName", Toast.LENGTH_SHORT)
+                        .show()
+                }
             }
 
             override fun onMessageSent(message: String) {
                 Log.d(TAG, "Message sent: $message")
-                Toast.makeText(context, "Message sent: $message", Toast.LENGTH_SHORT).show()
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Message sent: $message", Toast.LENGTH_SHORT).show()
+                }
             }
         })
     }
