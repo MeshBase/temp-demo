@@ -1,150 +1,136 @@
 package com.example.ble_dummy
-
+// MainActivity.kt
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.ble_dummy.ui.theme.BLE_DummyTheme
-import com.example.ble_dummy.BLEHandler
-import java.util.ArrayList
-import java.util.UUID
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 
-class MainActivity : ComponentActivity() {
-    var bluetoothHandler: BLEHandler? = null;
-    val id = UUID.randomUUID();
-    val TAG = "my_kotlin_screen";
-    var bleEnabler: BLEEnabler? = null;
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setupBlue();
-        setContent {
-            BLE_DummyTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding),
-                        onClick = { this.sendToEveryone() },
-                        onClick2 = { this.bluetoothHandler?.stop() },
-                        onClick3 = { this.bleEnabler?.enable() }
-
-                    )
-
-                }
-            }
-        }
-    }
-
-
-    fun sendToEveryone() {
-        Log.d(TAG, "trying to send to every one");
-        this.bluetoothHandler?.send("Hello world".toByteArray());
-    }
-
-    fun setupBlue() {
-        Log.d(TAG, "my uuid is" + id.toString());
-        val bleCentral = BLECentral(this, id);
-        val blEPeripheral = BlEPeripheral(this, id);
-        this.bluetoothHandler = BLEHandler(
-            bleCentral,
-            blEPeripheral,
-            {
-                Log.d(TAG, "connected to " + it.name);
-            },
-            {
-                Log.d(TAG, "disconnected from " + it.name);
-            },
-            {
-                Log.d(TAG, "neighbor discovered listener");
-            },
-            {
-                Log.d(TAG, "neigbor disconnected");
-            },
-            { data, neighbor ->
-                Log.d(
-                    TAG,
-                    "data received from " + neighbor.name + " data:" + data.toString()
-                )
-            },
-            { devices: ArrayList<Device> -> Log.d(TAG, "nearby devices listener") }
-        );
-
-        this.bleEnabler = BLEEnabler.getInstance();
-        bleEnabler?.init(
-            {
-                bluetoothHandler?.start();
-                Log.d(TAG, "bluetooth enabled") },
-            {
-                bluetoothHandler?.stop();
-                Log.d(TAG, "bluetooth disabled"); },
-            this
-        );
-        bleEnabler?.enable();
-
-    }
-
-}
-
-@Composable
-fun Greeting(
-    name: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    onClick2: () -> Unit,
-    onClick3: () -> Unit
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp), // Optional padding around the column
-        verticalArrangement = Arrangement.Center, // Center vertically
-        horizontalAlignment = Alignment.CenterHorizontally // Center horizontally
-    ) {
-        Text(
-            text = "Hello $name 2!",
-            modifier = Modifier.padding(bottom = 16.dp) // Space below the greeting text
-        )
-        Button(onClick = onClick, modifier = Modifier.fillMaxWidth(0.8f)) {
-            Text("Send to Everyone")
-        }
-        Spacer(modifier = Modifier.height(16.dp)) // Add space between buttons
-        Button(onClick = onClick2, modifier = Modifier.fillMaxWidth(0.8f)) {
-            Text("Stop Server")
-        }
-        Spacer(modifier = Modifier.height(16.dp)) // Add space between buttons
-        Button(onClick = onClick3, modifier = Modifier.fillMaxWidth(0.8f)) {
-            Text("Start Server")
-        }
-    }
-}
-
-//@Preview(showBackground = true)
-//@Composable
-//fun GreetingPreview() {
-//    BLE_DummyTheme {
-//        Greeting(
-//            "Android",
-//            modifier = TODO() ,
-//            onClick = TODO(),
-//            onClick2 = TODO(),
-//            onClick3 = TODO(),
-//        )
+//class MainActivity : ComponentActivity() {
+//    override fun onCreate(savedInstanceState: Bundle?) {
+//        super.onCreate(savedInstanceState)
+//        setContent {
+//            AppNavigation()
+//        }
 //    }
 //}
+//
+//@Composable
+//fun AppNavigation() {
+//    val navController = rememberNavController()
+//    NavHost(navController = navController, startDestination = "main") {
+//        composable("main") { MainScreen(navController) }
+//        composable("central") { CentralScreen() }
+//        composable("peripheral") { PeripheralScreen() }
+//    }
+//}
+//
+//@Composable
+//fun MainScreen(navController: androidx.navigation.NavController) {
+//    Column(
+//        modifier = Modifier.fillMaxSize(),
+//        verticalArrangement = Arrangement.Center,
+//        horizontalAlignment = Alignment.CenterHorizontally
+//    ) {
+//        Button(
+//            onClick = { navController.navigate("central") },
+//            modifier = Modifier.padding(16.dp)
+//        ) { Text("Be Central") }
+//
+//        Button(
+//            onClick = { navController.navigate("peripheral") },
+//            modifier = Modifier.padding(16.dp)
+//        ) { Text("Be Peripheral") }
+//    }
+//}
+
+import android.Manifest
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+//import androidx.compose.runtime.Composable
+//import androidx.compose.ui.Alignment
+//import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+
+@Composable
+fun MainScreen(navController: NavController) {
+    val context = LocalContext.current
+
+    // Launcher to request multiple permissions
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        // Check if all permissions are granted
+        if (permissions.all { it.value }) {
+            Toast.makeText(context, "All permissions granted!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Some permissions denied.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Function to request Bluetooth permissions based on Android version
+    fun requestBluetoothPermissions() {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+ uses these permissions
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_ADVERTISE
+            )
+        } else {
+            // For Android 11 and below, use the legacy permissions
+            arrayOf(
+                Manifest.permission.BLUETOOTH,
+                Manifest.permission.BLUETOOTH_ADMIN,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        }
+        permissionsLauncher.launch(permissions)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Button(
+            onClick = { navController.navigate("central") },
+            modifier = Modifier.padding(8.dp)
+        ) {
+            Text("Be Central")
+        }
+
+        Button(
+            onClick = { navController.navigate("peripheral") },
+            modifier = Modifier.padding(8.dp)
+        ) {
+            Text("Be Peripheral")
+        }
+
+        // New button for requesting Bluetooth permissions
+        Button(
+            onClick = { requestBluetoothPermissions() },
+            modifier = Modifier.padding(8.dp)
+        ) {
+            Text("Request Bluetooth Permissions")
+        }
+    }
+}

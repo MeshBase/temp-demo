@@ -2,9 +2,7 @@ package com.example.ble_dummy;
 
 import static android.bluetooth.BluetoothGattCharacteristic.*;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
@@ -19,19 +17,16 @@ import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.ParcelUuid;
 import android.util.Log;
-
-import androidx.core.app.ActivityCompat;
 
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.UUID;
 
-public class BlEPeripheral implements BLEPeripheralI {
+public class BBlEPeripheral implements BLEPeripheralI {
     private BLEConnectListener connectListener;
     private BLEDisconnectListener disconnectListener;
     private BLEDataListener dataListener;
@@ -50,7 +45,7 @@ public class BlEPeripheral implements BLEPeripheralI {
 
     private final HashSet<String> avoidedAddresses = new HashSet<>();
 
-    BlEPeripheral(Context context, UUID id) {
+    BBlEPeripheral(Context context, UUID id) {
         this.context = context;
         this.id = id;
     }
