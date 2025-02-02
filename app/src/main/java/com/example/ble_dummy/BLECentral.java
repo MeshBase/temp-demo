@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.bluetooth.*;
         import android.bluetooth.le.*;
         import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -43,19 +44,37 @@ public class BLECentral {
         );
         Log.d(TAG, "Scanning started");
     }
+    @SuppressLint("MissingPermission")
+    public void cancelConnection(BluetoothDevice device) {
+        String address = device.getAddress();
+        BluetoothGatt gatt = connectedDevices.get(address);
+
+        if (gatt != null) {
+            gatt.disconnect();
+            gatt.close();
+            connectedDevices.remove(address);
+            Log.d(TAG, "Connection canceled for: " + address);
+        } else {
+            Log.w(TAG, "No active connection to cancel for: " + address);
+        }
+    }
 
     @SuppressLint("MissingPermission")
     public void connectToDevice(BluetoothDevice device) {
-        // Clear existing connection first
-        BluetoothGatt existingGatt = connectedDevices.get(device.getAddress());
-        if (existingGatt != null) {
-            existingGatt.disconnect();
-            existingGatt.close();
+        // Samsung requires explicit transport type
+        if (Build.MANUFACTURER.equalsIgnoreCase("samsung")) {
+            device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
+        } else {
+            device.connectGatt(context, false, gattCallback);
         }
 
-        // Retry with shorter interval
-        device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
-        Log.d(TAG, "Attempting connection to: " + device.getAddress());
+        // Add connection timeout
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (!connectedDevices.containsKey(device.getAddress())) {
+                Log.w(TAG, "Connection timeout for " + device.getAddress());
+                cancelConnection(device);
+            }
+        }, 8000); // 8-second timeout for Samsung
     }
 
     @SuppressLint("MissingPermission")
@@ -83,9 +102,12 @@ public class BLECentral {
         @SuppressLint("MissingPermission")
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+
+            BluetoothDevice device = gatt.getDevice();
+            String deviceName = device.getName() != null ? device.getName() : "Unknown Device";
             Log.d(TAG, "Connection state changed - Status: " + status +
                     ", New State: " + newState +
-                    ", Device: " + gatt.getDevice().getAddress()+gatt.getDevice().getName());
+                    ", Device: " + gatt.getDevice().getAddress()+deviceName);
 
             String address = gatt.getDevice().getAddress();
             if (newState == BluetoothGatt.STATE_CONNECTED) {

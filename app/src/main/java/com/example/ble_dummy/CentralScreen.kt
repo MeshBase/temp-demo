@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -39,18 +41,24 @@ fun CentralScreen() {
             }
 
             override fun onMessageReceived(message: String) {
-                Toast.makeText(context, "Received: $message", Toast.LENGTH_LONG).show()
                 Log.d(TAG, "Message recieved: $message")
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Received: $message", Toast.LENGTH_LONG).show()
+                }
             }
 
             override fun onDeviceConnected(device: BluetoothDevice?) {
-                Toast.makeText(context, "Connected to ${device?.name}", Toast.LENGTH_SHORT).show()
                 Log.d(TAG, "Device connected: ${device?.name}")
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Connected to ${device?.name}", Toast.LENGTH_SHORT).show()
+                }
             }
 
             override fun onMessageForwarded(message: String) {
-                Toast.makeText(context, "Forwarded: $message", Toast.LENGTH_SHORT).show()
                 Log.d(TAG, "Forwarded: ${message}")
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Forwarded: $message", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

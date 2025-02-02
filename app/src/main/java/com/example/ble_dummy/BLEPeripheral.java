@@ -6,6 +6,8 @@ import android.bluetooth.*;
         import android.bluetooth.le.*;
         import android.content.Context;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import java.util.List;
@@ -29,6 +31,19 @@ public class BLEPeripheral {
         void onMessageSent(String message);
         void onDeviceConnected(String deviceName);
     }
+    private AdvertiseCallback  advertisementCallback = new AdvertiseCallback() {
+        @Override
+        public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+            super.onStartSuccess(settingsInEffect);
+            Log.d(TAG, "Advertisement started");
+        }
+
+        @Override
+        public void onStartFailure(int errorCode) {
+            super.onStartFailure(errorCode);
+            Log.d(TAG, "Advertisement failed:"+errorCode);
+        }
+    };
 
     public BLEPeripheral(Context context, MessageCallback callback) {
         this.context = context;
@@ -37,18 +52,43 @@ public class BLEPeripheral {
     }
 
     @SuppressLint("MissingPermission")
+    public void stopAdvertising() {
+        if (advertiser != null) {
+            try {
+                advertiser.stopAdvertising(advertisementCallback);
+                Log.d(TAG, "Advertising stopped successfully");
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "Failed to stop advertising: " + e.getMessage());
+            }
+        } else {
+            Log.w(TAG, "Advertiser was null - already stopped?");
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     private void setupGattServer() {
         btManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
         gattServer = btManager.openGattServer(context, new BluetoothGattServerCallback() {
             @Override
             public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
+                String deviceName = device.getName() != null ? device.getName() : "Unknown Device";
                 Log.d(TAG, "Peripheral connection state - Status: " + status +
                         ", New State: " + newState +
-                        ", Device: " + device.getAddress()+device.getName());
+                        ", Device: " + device.getAddress()+deviceName);
                 if (newState == BluetoothGatt.STATE_CONNECTED) {
-                    callback.onDeviceConnected(device.getName());
+                    callback.onDeviceConnected(deviceName);
+                }
+                // Samsung-specific workaround
+                if (status == 133 && IS_SAMSUNG) {
+                    Log.d(TAG, "Samsung workaround: restarting advertising");
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        stopAdvertising();
+                        startAdvertising();
+                    }, 1000);
                 }
             }
+
+
 
             @Override
             public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId,
@@ -90,7 +130,7 @@ public class BLEPeripheral {
         AdvertiseSettings settings = settingsBuilder.build();
 
         BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser()
-                .startAdvertising(settings, data, new AdvertiseCallback() {});
+                .startAdvertising(settings, data, advertisementCallback);
     }
 
     @SuppressLint("MissingPermission")
