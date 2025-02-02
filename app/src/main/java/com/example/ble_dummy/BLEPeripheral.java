@@ -53,6 +53,7 @@ public class BLEPeripheral {
 
     @SuppressLint("MissingPermission")
     public void stopAdvertising() {
+        keepAliveHandler.removeCallbacks(keepAliveRunnable);
         if (advertiser != null) {
             try {
                 advertiser.stopAdvertising(advertisementCallback);
@@ -103,12 +104,34 @@ public class BLEPeripheral {
         BluetoothGattService service = new BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
         messageCharacteristic = new BluetoothGattCharacteristic(CHAR_UUID,
-                BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_READ,
                 BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+
+        if (Build.MANUFACTURER.equalsIgnoreCase("samsung")) {
+            messageCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        }
+
+
+        BluetoothGattDescriptor descriptor = new BluetoothGattDescriptor(
+                UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"), // CCCD UUID
+                BluetoothGattDescriptor.PERMISSION_WRITE
+        );
+        messageCharacteristic.addDescriptor(descriptor);
         service.addCharacteristic(messageCharacteristic);
         gattServer.addService(service);
     }
 
+    private final Handler keepAliveHandler = new Handler(Looper.getMainLooper());
+    private final Runnable keepAliveRunnable = new Runnable() {
+        @SuppressLint("MissingPermission")
+        @Override
+        public void run() {
+            if (!btManager.getConnectedDevices(BluetoothProfile.GATT).isEmpty()) {
+                sendMessage("PING");
+                keepAliveHandler.postDelayed(this, 15000); // Every 15 seconds
+            }
+        }
+    };
     @SuppressLint("MissingPermission")
     public void startAdvertising() {
         Log.d(TAG, "Starting advertising");
@@ -144,17 +167,20 @@ public class BLEPeripheral {
 
         BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser()
                 .startAdvertising(settings, data, advertisementCallback);
+
+        keepAliveHandler.postDelayed(keepAliveRunnable, 15000);
     }
 
     @SuppressLint("MissingPermission")
     public void sendMessage(String message) {
-        // Use BluetoothManager to get connected devices
-        List<BluetoothDevice> connectedDevices = btManager.getConnectedDevices(BluetoothProfile.GATT);
-        Log.d(TAG, "Sending message to " + connectedDevices.size() + " devices");
-
         messageCharacteristic.setValue(message);
+        List<BluetoothDevice> connectedDevices = btManager.getConnectedDevices(BluetoothProfile.GATT);
+
+        Log.d(TAG, "Sending message to " + connectedDevices.size() + " devices");
         for (BluetoothDevice device : connectedDevices) {
+            // Ensure notifications are enabled before sending
             gattServer.notifyCharacteristicChanged(device, messageCharacteristic, false);
+            Log.d(TAG, "Notified device: " + device.getAddress());
         }
     }
 }
