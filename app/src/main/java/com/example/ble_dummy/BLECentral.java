@@ -52,17 +52,21 @@ public class BLECentral {
     }
 
 
-    private final Map<String, Integer> retryCounts = new HashMap<>();
     private final Set<String> connectingDevices = new HashSet<>();
 
 
     @SuppressLint("MissingPermission")
     public void connectToDevice(BluetoothDevice device) {
         String address = device.getAddress();
+        retryCount.put(address, 0);
 
         // Prevent duplicate connection attempts
         if (connectingDevices.contains(address)) {
             Log.d(TAG, "Already connecting to: " + address);
+            return;
+        }
+        if (connectedDevices.containsKey(address)) {
+            Log.d(TAG, "Already connected to: " + address);
             return;
         }
 
@@ -80,7 +84,7 @@ public class BLECentral {
             gatt.writeCharacteristic(characteristic);
             Log.d(TAG, "Forwarding message to: " + gatt.getDevice().getAddress());
         }
-        callback.onMessageForwarded(message); // Notify UI
+        callback.onMessageForwarded(message + "to"+connectedDevices.size()); // Notify UI
     }
 
 
@@ -89,16 +93,30 @@ public class BLECentral {
         String address = device.getAddress();
         int count = retryCount.getOrDefault(address, 0);
 
-        if (count < MAX_RETRIES) {
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                Log.d(TAG, "Reconnecting attempt " + (count+1) + "/3");
-                device.connectGatt(context, false, gattCallback);
-                retryCount.put(address, count + 1);
-            }, 5000); // 5-second delay
-        } else {
-            Log.w(TAG, "Max retries reached for " + address);
-            retryCount.remove(address);
+        Log.d(TAG, "retrying..."+count);
+        if (count >= MAX_RETRIES) {
+            Log.d(TAG, "too many tries already for connecting to"+device.getName());
+            return;
         }
+
+        Log.d(TAG, "decided to retry after some milliseconds"+device.getName());
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (retryCount.getOrDefault(address, 0) >= MAX_RETRIES || connectingDevices.contains(address)|| connectedDevices.containsKey(address)){
+                if (connectedDevices.containsKey(address)){
+                    Log.d(TAG, "dropping retryign due to "+device.getName()+"being already connected");
+                }else if (connectingDevices.contains(address)){
+                    Log.d(TAG, "dropping retryign due to "+device.getName()+"being already connecting");
+                }else if (retryCount.getOrDefault(address, 0) >= MAX_RETRIES){
+                    Log.d(TAG, "dropping retryign due to "+device.getName()+"being already retried too many times");
+                }
+                return;
+            }
+
+            Log.d(TAG, "Reconnecting attempt " + (count+1) + "/"+MAX_RETRIES);
+            device.connectGatt(context, false, gattCallback);
+            connectingDevices.add(address);
+            retryCount.put(address, count + 1);
+        }, 500); // 5-second delay
     }
 
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -117,16 +135,19 @@ public class BLECentral {
             @Override
             public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
                 String address = gatt.getDevice().getAddress();
+                connectingDevices.remove(address);
 
                 if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                     Log.w(TAG, "Disconnected from: " + address);
                     attemptReconnect(gatt.getDevice());
                     callback.onDeviceDisconnected(gatt.getDevice());
-                }else{
+                    connectedDevices.remove(address);
+                }else if (newState == BluetoothGatt.STATE_CONNECTED && !connectedDevices.containsKey(address)){
                     callback.onDeviceConnected(gatt.getDevice());
                     Log.d(TAG, "Connected to: " + address);
                     connectedDevices.put(address, gatt);
                     gatt.discoverServices();
+                    retryCount.put(address, 0);
 
             }
         };

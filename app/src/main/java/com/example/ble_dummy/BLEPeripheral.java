@@ -21,14 +21,11 @@ public class BLEPeripheral {
 
     private static final UUID CHAR_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
 
-    private BluetoothLeAdvertiser advertiser;
     private BluetoothGattServer gattServer;
     private BluetoothGattCharacteristic messageCharacteristic;
     private Context context;
     private MessageCallback callback;
     private BluetoothManager btManager; // Add this
-    private static final boolean IS_SAMSUNG = Build.MANUFACTURER.equalsIgnoreCase("samsung");
-    private final Set<String> connectedDevices = new HashSet<>();
 
         private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
 
@@ -39,14 +36,15 @@ public class BLEPeripheral {
                 String message = new String(value);
                 callback.onMessageSent(message);
                 Log.d(TAG, "Received message from " + device.getName() + ": " + message);
-            }            @Override
+            }            @SuppressLint("MissingPermission")
+            @Override
             public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
                 if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                     Log.d(TAG, "Central disconnected, restarting advertising");
 
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        startAdvertising();
-                    }, 1000);
+                    callback.onDeviceDisconnected(device.getName()==null?"unknown": device.getName());
+                }else{
+                    callback.onDeviceConnected(device.getName()==null?"unknown": device.getName());
                 }
             }
         };
@@ -76,20 +74,7 @@ public class BLEPeripheral {
         setupGattServer();
     }
 
-    @SuppressLint("MissingPermission")
-    public void stopAdvertising() {
-        keepAliveHandler.removeCallbacks(keepAliveRunnable);
-        if (advertiser != null) {
-            try {
-                advertiser.stopAdvertising(advertisementCallback);
-                Log.d(TAG, "Advertising stopped successfully");
-            } catch (IllegalStateException e) {
-                Log.e(TAG, "Failed to stop advertising: " + e.getMessage());
-            }
-        } else {
-            Log.w(TAG, "Advertiser was null - already stopped?");
-        }
-    }
+
 
     @SuppressLint("MissingPermission")
     private void setupGattServer() {
@@ -116,21 +101,10 @@ public class BLEPeripheral {
         gattServer.addService(service);
     }
 
-    private final Handler keepAliveHandler = new Handler(Looper.getMainLooper());
-    private final Runnable keepAliveRunnable = new Runnable() {
-        @SuppressLint("MissingPermission")
-        @Override
-        public void run() {
-            if (!btManager.getConnectedDevices(BluetoothProfile.GATT).isEmpty()) {
-                sendMessage("PING");
-                keepAliveHandler.postDelayed(this, 15000); // Every 15 seconds
-            }
-        }
-    };
+
     @SuppressLint("MissingPermission")
     public void startAdvertising() {
         Log.d(TAG, "Starting advertising");
-        stopAdvertising();
         int txPower = Build.MANUFACTURER.equalsIgnoreCase("samsung")
                 ? AdvertiseSettings.ADVERTISE_TX_POWER_HIGH
                 : AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM;
@@ -144,26 +118,14 @@ public class BLEPeripheral {
 
         // Start advertising with retry logic
 
-        AdvertiseSettings.Builder settingsBuilder = new AdvertiseSettings.Builder()
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-                .setConnectable(true);
-
         AdvertiseData data = new AdvertiseData.Builder()
                 .setIncludeDeviceName(true)
                 .addServiceUuid(new android.os.ParcelUuid(SERVICE_UUID))
                 .build();
 
-
-        if (IS_SAMSUNG) {
-            // Samsung requires different interval configuration
-            settingsBuilder.setTimeout(0); // Disable timeout
-        }
-
-
         BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser()
                 .startAdvertising(settings, data, advertisementCallback);
 
-        keepAliveHandler.postDelayed(keepAliveRunnable, 15000);
     }
 
     @SuppressLint("MissingPermission")

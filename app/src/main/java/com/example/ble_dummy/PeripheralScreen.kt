@@ -33,11 +33,11 @@ fun PeripheralScreen() {
             }
 
             override fun onDeviceDisconnected(deviceName: String?) {
-                connectionStatus = "not connected"
+                connectionStatus = "advertising again"
                 Log.d(TAG, "disconnected to: $deviceName")
 
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Central disonnected: $deviceName", Toast.LENGTH_SHORT)
+                    Toast.makeText(context, "Central disconnected: $deviceName", Toast.LENGTH_SHORT)
                         .show()
                 }
             }
