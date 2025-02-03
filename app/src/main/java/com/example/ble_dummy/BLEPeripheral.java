@@ -10,6 +10,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -20,6 +22,7 @@ public class BLEPeripheral {
     private static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
 
     private static final UUID CHAR_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
+    private static final UUID CHAR2_UUID = UUID.fromString("8c380002-10bd-4fdb-ba21-1922d6cf860d");
 
     private BluetoothGattServer gattServer;
     private BluetoothGattCharacteristic messageCharacteristic;
@@ -30,13 +33,35 @@ public class BLEPeripheral {
         private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
 
             @SuppressLint("MissingPermission")
+            @Override
             public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId,
                                                      BluetoothGattCharacteristic characteristic, boolean preparedWrite,
                                                      boolean responseNeeded, int offset, byte[] value) {
-                String message = new String(value);
-                callback.onMessageSent(message);
-                Log.d(TAG, "Received message from " + device.getName() + ": " + message);
-            }            @SuppressLint("MissingPermission")
+
+                super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
+                Log.d(TAG, "on characterstic write request called ");
+                if (characteristic.getUuid().equals(CHAR_UUID) ||
+                        characteristic.getUuid().equals(CHAR2_UUID)) {
+
+                    String message = new String(value, StandardCharsets.UTF_8);
+                    Log.d(TAG, "Received message: " + message);
+                    callback.onMessageSent(message);
+
+                    if (responseNeeded) {
+                        gattServer.sendResponse(device, requestId,
+                                BluetoothGatt.GATT_SUCCESS, offset, null);
+                    }
+                }
+            }
+
+
+            @Override
+            public void onExecuteWrite(BluetoothDevice device, int requestId, boolean execute) {
+                super.onExecuteWrite(device, requestId, execute);
+                Log.d(TAG, "on execute write was called");
+            }
+
+            @SuppressLint("MissingPermission")
             @Override
             public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
                 if (newState == BluetoothGatt.STATE_DISCONNECTED) {
@@ -83,13 +108,24 @@ public class BLEPeripheral {
 
         BluetoothGattService service = new BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
-        messageCharacteristic = new BluetoothGattCharacteristic(CHAR_UUID,
-                BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_READ,
-                BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+        messageCharacteristic = new BluetoothGattCharacteristic(
+                CHAR_UUID,
+                BluetoothGattCharacteristic.PROPERTY_WRITE |
+                        BluetoothGattCharacteristic.PROPERTY_NOTIFY |
+                        BluetoothGattCharacteristic.PROPERTY_READ,
+                BluetoothGattCharacteristic.PERMISSION_READ |
+                        BluetoothGattCharacteristic.PERMISSION_WRITE
+        );
 
         if (Build.MANUFACTURER.equalsIgnoreCase("samsung")) {
             messageCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         }
+
+        BluetoothGattDescriptor writeDescriptor = new BluetoothGattDescriptor(
+                UUID.fromString("00002901-0000-1000-8000-00805f9b34fb"), // Characteristic User Description
+                BluetoothGattDescriptor.PERMISSION_WRITE
+        );
+        messageCharacteristic.addDescriptor(writeDescriptor);
 
 
         BluetoothGattDescriptor descriptor = new BluetoothGattDescriptor(
@@ -97,7 +133,25 @@ public class BLEPeripheral {
                 BluetoothGattDescriptor.PERMISSION_WRITE
         );
         messageCharacteristic.addDescriptor(descriptor);
+        //
+        // Configure CHAR2_UUID properly
+        BluetoothGattCharacteristic char2Characteristic = new BluetoothGattCharacteristic(
+                CHAR2_UUID,
+                BluetoothGattCharacteristic.PROPERTY_WRITE |
+                        BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+                BluetoothGattCharacteristic.PERMISSION_WRITE
+        );
+
+        // Add CCCD descriptor to CHAR2_UUID
+        BluetoothGattDescriptor descriptor2 = new BluetoothGattDescriptor(
+                UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"),
+                BluetoothGattDescriptor.PERMISSION_WRITE
+        );
+        char2Characteristic.addDescriptor(descriptor2);
+        //
+
         service.addCharacteristic(messageCharacteristic);
+        service.addCharacteristic(char2Characteristic);
         gattServer.addService(service);
     }
 

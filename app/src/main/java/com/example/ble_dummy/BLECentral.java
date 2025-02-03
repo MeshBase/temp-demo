@@ -10,6 +10,7 @@ import android.os.Looper;
 import android.util.Log;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class BLECentral {
@@ -17,11 +18,14 @@ public class BLECentral {
     private static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
     private static final UUID CHAR_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
 
+    private static final UUID CHAR2_UUID = UUID.fromString("8c380002-10bd-4fdb-ba21-1922d6cf860d");
+
     private BluetoothLeScanner scanner;
     private final Map<String, BluetoothGatt> connectedDevices = new HashMap<>();
     private Context context;
     private ConnectionCallback callback;
     private final Map<String, Boolean> reconnectMap = new HashMap<>();
+    private Set<String> messageSet = new HashSet<String>();
 
     public interface ConnectionCallback {
         void onDeviceFound(BluetoothDevice device);
@@ -76,16 +80,27 @@ public class BLECentral {
 
 
 
+
     @SuppressLint("MissingPermission")
     public void sendMessageToAllDevices(String message) {
-        for (BluetoothGatt gatt : connectedDevices.values()) {
-            BluetoothGattCharacteristic characteristic = gatt.getService(SERVICE_UUID).getCharacteristic(CHAR_UUID);
-            characteristic.setValue(message);
-            gatt.writeCharacteristic(characteristic);
-            Log.d(TAG, "Forwarding message to: " + gatt.getDevice().getAddress());
+        if (messageSet.contains(message)){
+            Log.d(TAG, "already sent message :"+message);
+            return;
         }
-        callback.onMessageForwarded(message + "to"+connectedDevices.size()); // Notify UI
-    }
+        messageSet.add(message);
+
+        for (BluetoothGatt gatt : new ArrayList<>(connectedDevices.values())) { // Avoid concurrent modification
+            BluetoothGattCharacteristic characteristic = gatt.getService(SERVICE_UUID).getCharacteristic(CHAR_UUID);
+            if (characteristic != null) {
+                characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                characteristic.setValue( message.getBytes(StandardCharsets.UTF_8));
+                boolean success = gatt.writeCharacteristic(characteristic);
+                Log.v(TAG, "Write status: "+success+" to "+gatt.getDevice().getName()+" with address "+gatt.getDevice().getAddress());
+            }
+        }
+
+        callback.onMessageForwarded(message + " to "+connectedDevices.size()+" devices");
+        }
 
 
     @SuppressLint("MissingPermission")
@@ -156,7 +171,10 @@ public class BLECentral {
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             String message = new String(characteristic.getValue());
             callback.onMessageReceived(message);
-            sendMessageToAllDevices(message); // Forward message
+
+               new Handler(Looper.getMainLooper()) .postDelayed(() -> {
+                   sendMessageToAllDevices(message); // Forward message
+               }, 500);
         }
 
         @SuppressLint("MissingPermission")
