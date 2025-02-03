@@ -13,12 +13,12 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+class CommonConstants {
+    public static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
+    public static final UUID CHAR_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
+}
 public class BLECentral {
     public static final String TAG = "my_central";
-    private static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
-    private static final UUID CHAR_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
-
-    private static final UUID CHAR2_UUID = UUID.fromString("8c380002-10bd-4fdb-ba21-1922d6cf860d");
 
     private BluetoothLeScanner scanner;
     private final Map<String, BluetoothGatt> connectedDevices = new HashMap<>();
@@ -47,7 +47,7 @@ public class BLECentral {
 
     @SuppressLint("MissingPermission")
     public void startScanning() {
-        ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(SERVICE_UUID)).build();
+        ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(CommonConstants.SERVICE_UUID)).build();
         scanner.startScan(Collections.singletonList(filter),
                 new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
                 scanCallback
@@ -88,19 +88,18 @@ public class BLECentral {
             return;
         }
         messageSet.add(message);
+        for (BluetoothGatt gatt : connectedDevices.values()) {
+            BluetoothGattCharacteristic characteristic =
+                    gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.CHAR_UUID); // Use CHAR_UUID
 
-        for (BluetoothGatt gatt : new ArrayList<>(connectedDevices.values())) { // Avoid concurrent modification
-            BluetoothGattCharacteristic characteristic = gatt.getService(SERVICE_UUID).getCharacteristic(CHAR_UUID);
-            if (characteristic != null) {
-                characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-                characteristic.setValue( message.getBytes(StandardCharsets.UTF_8));
-                boolean success = gatt.writeCharacteristic(characteristic);
-                Log.v(TAG, "Write status: "+success+" to "+gatt.getDevice().getName()+" with address "+gatt.getDevice().getAddress());
-            }
+            characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+            characteristic.setValue(message.getBytes(StandardCharsets.UTF_8));
+            boolean success = gatt.writeCharacteristic(characteristic);
+            Log.v(TAG, "Write status: "+success+" to "+gatt.getDevice().getName()+" with address "+gatt.getDevice().getAddress());
         }
 
         callback.onMessageForwarded(message + " to "+connectedDevices.size()+" devices");
-        }
+    }
 
 
     @SuppressLint("MissingPermission")
@@ -182,9 +181,9 @@ public class BLECentral {
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
             // ... rest unchanged
-            BluetoothGattService service = gatt.getService(SERVICE_UUID);
+            BluetoothGattService service = gatt.getService(CommonConstants.SERVICE_UUID);
             if (service != null) {
-                BluetoothGattCharacteristic characteristic = service.getCharacteristic(CHAR_UUID);
+                BluetoothGattCharacteristic characteristic = service.getCharacteristic(CommonConstants.CHAR_UUID);
 
                 // Enable notifications
                 gatt.setCharacteristicNotification(characteristic, true);

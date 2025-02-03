@@ -1,6 +1,9 @@
 package com.example.ble_dummy;
 
 // BLEPeripheral.java
+import static com.example.ble_dummy.CommonConstants.CHAR_UUID;
+import static com.example.ble_dummy.CommonConstants.SERVICE_UUID;
+
 import android.annotation.SuppressLint;
 import android.bluetooth.*;
         import android.bluetooth.le.*;
@@ -19,10 +22,7 @@ import java.util.UUID;
 
 public class BLEPeripheral {
     public static final String TAG = "my_peripheral";
-    private static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
 
-    private static final UUID CHAR_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
-    private static final UUID CHAR2_UUID = UUID.fromString("8c380002-10bd-4fdb-ba21-1922d6cf860d");
 
     private BluetoothGattServer gattServer;
     private BluetoothGattCharacteristic messageCharacteristic;
@@ -31,25 +31,21 @@ public class BLEPeripheral {
     private BluetoothManager btManager; // Add this
 
         private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
-
             @SuppressLint("MissingPermission")
             @Override
             public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId,
                                                      BluetoothGattCharacteristic characteristic, boolean preparedWrite,
                                                      boolean responseNeeded, int offset, byte[] value) {
 
-                super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
-                Log.d(TAG, "on characterstic write request called ");
-                if (characteristic.getUuid().equals(CHAR_UUID) ||
-                        characteristic.getUuid().equals(CHAR2_UUID)) {
-
+                // Handle writes to CHAR_UUID
+                if (characteristic.getUuid().equals(CHAR_UUID)) {
                     String message = new String(value, StandardCharsets.UTF_8);
-                    Log.d(TAG, "Received message: " + message);
+                    Log.d(TAG, "Received: " + message);
                     callback.onMessageSent(message);
 
+                    // Required response
                     if (responseNeeded) {
-                        gattServer.sendResponse(device, requestId,
-                                BluetoothGatt.GATT_SUCCESS, offset, null);
+                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
                     }
                 }
             }
@@ -113,9 +109,10 @@ public class BLEPeripheral {
                 BluetoothGattCharacteristic.PROPERTY_WRITE |
                         BluetoothGattCharacteristic.PROPERTY_NOTIFY |
                         BluetoothGattCharacteristic.PROPERTY_READ,
-                BluetoothGattCharacteristic.PERMISSION_READ |
-                        BluetoothGattCharacteristic.PERMISSION_WRITE
+                BluetoothGattCharacteristic.PERMISSION_WRITE |
+                        BluetoothGattCharacteristic.PERMISSION_READ
         );
+
 
         if (Build.MANUFACTURER.equalsIgnoreCase("samsung")) {
             messageCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
@@ -127,31 +124,7 @@ public class BLEPeripheral {
         );
         messageCharacteristic.addDescriptor(writeDescriptor);
 
-
-        BluetoothGattDescriptor descriptor = new BluetoothGattDescriptor(
-                UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"), // CCCD UUID
-                BluetoothGattDescriptor.PERMISSION_WRITE
-        );
-        messageCharacteristic.addDescriptor(descriptor);
-        //
-        // Configure CHAR2_UUID properly
-        BluetoothGattCharacteristic char2Characteristic = new BluetoothGattCharacteristic(
-                CHAR2_UUID,
-                BluetoothGattCharacteristic.PROPERTY_WRITE |
-                        BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-                BluetoothGattCharacteristic.PERMISSION_WRITE
-        );
-
-        // Add CCCD descriptor to CHAR2_UUID
-        BluetoothGattDescriptor descriptor2 = new BluetoothGattDescriptor(
-                UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"),
-                BluetoothGattDescriptor.PERMISSION_WRITE
-        );
-        char2Characteristic.addDescriptor(descriptor2);
-        //
-
         service.addCharacteristic(messageCharacteristic);
-        service.addCharacteristic(char2Characteristic);
         gattServer.addService(service);
     }
 
