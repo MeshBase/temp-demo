@@ -6,12 +6,42 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
 
+class LogViewModel: ViewModel() {
+    private val _messages = mutableStateListOf<String>()
+    val messages: List<String> = _messages
+
+    fun addMessages(message: String) {
+        _messages.add(message)
+    }
+}
+
+@Composable
+fun MessageCard(message: String) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        shape = RoundedCornerShape(8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(16.dp),
+            fontSize = 16.sp
+        )
+    }
+}
 
 @Composable
 fun PeripheralScreen() {
@@ -19,6 +49,8 @@ fun PeripheralScreen() {
     var message by remember { mutableStateOf("") }
     var connectionStatus by remember { mutableStateOf("Not connected") }
     val TAG = "my_peripheral screen"
+
+    val messages = remember { mutableStateListOf<String>() }
 
     val blePeripheral = remember {
         BLEPeripheral(context, object : BLEPeripheral.MessageCallback {
@@ -44,6 +76,7 @@ fun PeripheralScreen() {
 
             override fun onMessageReceived(message: String) {
                 Log.d(TAG, "Message Received: $message")
+                messages.add(message)
                 Handler(Looper.getMainLooper()).post {
                     Toast.makeText(context, "Message Received: $message", Toast.LENGTH_SHORT).show()
                 }
@@ -78,6 +111,12 @@ fun PeripheralScreen() {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Send Message")
+        }
+
+        LazyColumn(modifier=Modifier.fillMaxSize()) {
+            items(messages) {msg ->
+                MessageCard(msg)
+            }
         }
     }
 
