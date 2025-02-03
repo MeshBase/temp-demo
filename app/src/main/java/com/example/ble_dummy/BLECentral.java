@@ -88,12 +88,14 @@ public class BLECentral {
             return;
         }
         messageSet.add(message);
+        String modifiedMessage = message + "-from-central";
+
         for (BluetoothGatt gatt : connectedDevices.values()) {
             BluetoothGattCharacteristic characteristic =
                     gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.CHAR_UUID); // Use CHAR_UUID
 
             characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-            characteristic.setValue(message.getBytes(StandardCharsets.UTF_8));
+            characteristic.setValue(modifiedMessage.getBytes(StandardCharsets.UTF_8));
             boolean success = gatt.writeCharacteristic(characteristic);
             Log.v(TAG, "Write status: "+success+" to "+gatt.getDevice().getName()+" with address "+gatt.getDevice().getAddress());
         }

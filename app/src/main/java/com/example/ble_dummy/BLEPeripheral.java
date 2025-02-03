@@ -41,12 +41,15 @@ public class BLEPeripheral {
                 if (characteristic.getUuid().equals(CHAR_UUID)) {
                     String message = new String(value, StandardCharsets.UTF_8);
                     Log.d(TAG, "Received: " + message);
-                    callback.onMessageSent(message);
+                    callback.onMessageReceived(message);
 
                     // Required response
                     if (responseNeeded) {
                         gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
                     }
+                }
+                else {
+                    Log.e(TAG, "Could not receive message due to listener");
                 }
             }
 
@@ -71,7 +74,7 @@ public class BLEPeripheral {
         };
 
     public interface MessageCallback {
-        void onMessageSent(String message);
+        void onMessageReceived(String message);
         void onDeviceConnected(String deviceName);
         void  onDeviceDisconnected(String deviceName);
     }

@@ -42,10 +42,10 @@ fun PeripheralScreen() {
                 }
             }
 
-            override fun onMessageSent(message: String) {
-                Log.d(TAG, "Message sent: $message")
+            override fun onMessageReceived(message: String) {
+                Log.d(TAG, "Message Received: $message")
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Message sent: $message", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Message Received: $message", Toast.LENGTH_SHORT).show()
                 }
             }
         })
