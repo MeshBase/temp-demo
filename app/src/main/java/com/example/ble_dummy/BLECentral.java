@@ -5,20 +5,40 @@ import android.annotation.SuppressLint;
 import android.bluetooth.*;
 import android.bluetooth.le.*;
 import android.content.Context;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import java.lang.reflect.Method;
+import androidx.annotation.NonNull;
+
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 class CommonConstants {
     public static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
-    public static final UUID CHAR_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
-    public  static  final  UUID CENTRAL_NOTIF_UUID = UUID.fromString("00002901-0000-1000-8000-00805f9b34fb" );
-    public  static  final  UUID PERIPHERAL_NOTIF_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb" );
+    public static final UUID MESSAGE_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
+    public static final UUID ID_UUID = UUID.fromString("0000beef-0000-1000-8000-10005f9b34fb");
+    public  static  final  UUID NOTIF_DESCRIPTOR_UUID = UUID.fromString("00002901-0000-1000-8000-00805f9b34fb" );
+}
+
+class ConvertUUID {
+    public static byte[] uuidToBytes(UUID uuid) {
+        ByteBuffer bb = ByteBuffer.wrap(new byte[16]);
+        bb.putLong(uuid.getMostSignificantBits());
+        bb.putLong(uuid.getLeastSignificantBits());
+        return bb.array();
+    }
+
+    public static UUID bytesToUUID(byte[] bytes) {
+        if (bytes.length != 16) {
+            throw new IllegalArgumentException("Invalid UUID byte array length: " + bytes.length);
+        }
+        ByteBuffer bb = ByteBuffer.wrap(bytes);
+        long mostSigBits = bb.getLong();
+        long leastSigBits = bb.getLong();
+        return new UUID(mostSigBits, leastSigBits);
+    }
 }
 
 public class BLECentral {
@@ -69,12 +89,11 @@ public class BLECentral {
     @SuppressLint("MissingPermission")
     public void sendMessageToAllDevices(String message) {
         for (BluetoothGatt gatt : connectedDevices.values()) {
-            BluetoothGattCharacteristic characteristic =
-                    gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.CHAR_UUID); // Use CHAR_UUID
+            BluetoothGattCharacteristic messageCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.MESSAGE_UUID); // Use CHAR_UUID
 
-            characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-            characteristic.setValue(message.getBytes(StandardCharsets.UTF_8));
-            boolean success = gatt.writeCharacteristic(characteristic);
+            messageCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+            messageCharacteristic.setValue(message.getBytes(StandardCharsets.UTF_8));
+            boolean success = gatt.writeCharacteristic(messageCharacteristic);
             Log.v(TAG, "Write status: " + success + " to " + gatt.getDevice().getName() + " with address " + gatt.getDevice().getAddress());
         }
 
@@ -147,48 +166,70 @@ public class BLECentral {
 
         @SuppressLint("MissingPermission")
         @Override
+        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicRead(gatt, characteristic, status);
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "Failed to read characteristic from "+gatt.getDevice().getName());
+                return;
+            }
+            Log.d(TAG, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+characteristic.getValue());
+
+            if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
+                try{
+                    Log.d(TAG, "here");
+                    UUID uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
+                    Log.d(TAG, "Device UUID! of " + gatt.getDevice().getName() + " is : " + uuid);
+                }catch (Exception e){
+                    Log.e(TAG, "error on read characteristic"+e);
+                    throw e;
+                }
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
             if (status != BluetoothGatt.GATT_SUCCESS){
                 Log.d(TAG, "Services discovery failed for"+gatt.getDevice().getName());
-            }
-            BluetoothGattService service = gatt.getService(CommonConstants.SERVICE_UUID);
-            if (service == null) {
-                Log.e(TAG, "Service not found");
                 return;
             }
 
-            BluetoothGattCharacteristic characteristic = service.getCharacteristic(CommonConstants.CHAR_UUID);
-            if (characteristic == null) {
-                Log.e(TAG, "message Characteristic not found");
-                return;
-            }
+            try{
+                BluetoothGattService service = gatt.getService(CommonConstants.SERVICE_UUID);
 
-            //enable notification
-            gatt.setCharacteristicNotification(characteristic, true);
-            BluetoothGattDescriptor descriptor = characteristic.getDescriptor( CommonConstants.CENTRAL_NOTIF_UUID );
-            if (descriptor == null) {
-                Log.e(TAG, "descriptor not found");
-                return;
-            }
-            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-            gatt.writeDescriptor(descriptor);
+                //enable notification
+                BluetoothGattCharacteristic messageCharacteristic = service.getCharacteristic(CommonConstants.MESSAGE_UUID);
+                gatt.setCharacteristicNotification(messageCharacteristic, true);
+                BluetoothGattDescriptor descriptor = messageCharacteristic.getDescriptor( CommonConstants.NOTIF_DESCRIPTOR_UUID);
+                descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                gatt.writeDescriptor(descriptor);
 
-//            get device uuid
-            BluetoothGattCharacteristic idCharacterstic = service.getCharacteristics().get(1);
-            if (idCharacterstic == null) {
-                Log.e(TAG, "id Characteristic not found");
-                return;
-            }
 
-            Log.d(TAG, "got id of " + idCharacterstic.getUuid().toString() + " from"+ gatt.getDevice().getName());
+                Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
+            }catch (Exception e){
+                //see if any null errors
+                Log.e(TAG, "error on discover services"+e);
+                throw  e;
+            }
         }
 
+        @SuppressLint("MissingPermission")
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-            if (status == BluetoothGatt.GATT_SUCCESS) {
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "Notifications failed to be enabled!");
+                return;
+            }
+            if (descriptor.getUuid().equals(CommonConstants.NOTIF_DESCRIPTOR_UUID)){
                 Log.d(TAG, "Notifications enabled!");
-                // Now you can safely expect notifications from the peripheral.
+
+                //then get device uuid
+                BluetoothGattCharacteristic idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.ID_UUID);
+                boolean success = gatt.readCharacteristic(idCharacteristic);
+                if (!success){
+                    Log.d(TAG, "Failed to read characteristic"+idCharacteristic.getUuid()+" from "+gatt.getDevice().getName());
+                }
             }
         }
     };

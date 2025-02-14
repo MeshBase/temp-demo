@@ -1,23 +1,17 @@
 package com.example.ble_dummy;
 
 // BLEPeripheral.java
-import static com.example.ble_dummy.CommonConstants.CHAR_UUID;
+import static com.example.ble_dummy.CommonConstants.MESSAGE_UUID;
 import static com.example.ble_dummy.CommonConstants.SERVICE_UUID;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.*;
         import android.bluetooth.le.*;
         import android.content.Context;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 public class BLEPeripheral {
@@ -34,7 +28,7 @@ public class BLEPeripheral {
             @Override
             public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
 
-                if (characteristic.getUuid().equals(CHAR_UUID)) {
+                if (characteristic.getUuid().equals(MESSAGE_UUID)) {
                     String message = new String(value, StandardCharsets.UTF_8);
                     Log.d(TAG, "Received: " + message);
                     callback.onMessageSent(message);
@@ -45,6 +39,19 @@ public class BLEPeripheral {
                     }
                 }
             }
+
+            @SuppressLint("MissingPermission")
+            @Override
+            public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
+                super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
+                Log.d(TAG, "Read request received from "+device.getName()+":"+characteristic.getUuid());
+
+                if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
+                    UUID deviceUUID = UUID.randomUUID();
+                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(deviceUUID));
+                }
+            }
+
             @SuppressLint("MissingPermission")
             @Override
             public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
@@ -61,7 +68,7 @@ public class BLEPeripheral {
             @Override
             public void onDescriptorWriteRequest( BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value ) {
                 Log.d(TAG,"descriptor write request received");
-                if (descriptor.getUuid().equals(CommonConstants.CENTRAL_NOTIF_UUID)) {
+                if (descriptor.getUuid().equals(CommonConstants.NOTIF_DESCRIPTOR_UUID)) {
                     if (responseNeeded) {
                         gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
                     }
@@ -104,7 +111,7 @@ public class BLEPeripheral {
         BluetoothGattService service = new BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
         messageCharacteristic = new BluetoothGattCharacteristic(
-                CHAR_UUID,
+                MESSAGE_UUID,
                 BluetoothGattCharacteristic.PROPERTY_WRITE |
                         BluetoothGattCharacteristic.PROPERTY_NOTIFY |
                         BluetoothGattCharacteristic.PROPERTY_READ,
@@ -113,18 +120,17 @@ public class BLEPeripheral {
         );
 
 
-        BluetoothGattDescriptor writeDescriptor = new BluetoothGattDescriptor( CommonConstants.CENTRAL_NOTIF_UUID, BluetoothGattDescriptor.PERMISSION_WRITE );
+        BluetoothGattDescriptor writeDescriptor = new BluetoothGattDescriptor( CommonConstants.NOTIF_DESCRIPTOR_UUID, BluetoothGattDescriptor.PERMISSION_WRITE );
         messageCharacteristic.addDescriptor(writeDescriptor);
 
-//        the uuid of the characteristic is already the value, no need to read
-        BluetoothGattCharacteristic idCharacterstic = new BluetoothGattCharacteristic(
-                UUID.randomUUID(),
+        BluetoothGattCharacteristic idCharacteristic = new BluetoothGattCharacteristic(
+                CommonConstants.ID_UUID,
                 BluetoothGattCharacteristic.PROPERTY_READ,
                 BluetoothGattCharacteristic.PERMISSION_READ
         );
 
         service.addCharacteristic(messageCharacteristic);
-//        service.addCharacteristic(idCharacterstic);
+        service.addCharacteristic(idCharacteristic);
         gattServer.addService(service);
     }
 
