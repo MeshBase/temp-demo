@@ -43,9 +43,9 @@ fun PeripheralScreen() {
             }
 
             override fun onMessageSent(message: String) {
-                Log.d(TAG, "Message sent: $message")
+                Log.d(TAG, "Message recieved: $message")
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Message sent: $message", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Message recieved: $message", Toast.LENGTH_SHORT).show()
                 }
             }
         })
@@ -58,6 +58,7 @@ fun PeripheralScreen() {
         Spacer(modifier = Modifier.height(16.dp))
 
         // Message Input
+
         TextField(
             value = message,
             onValueChange = { message = it },
