@@ -6,6 +6,10 @@ import android.app.Activity;
 import androidx.activity.ComponentActivity;
 
 import java.util.UUID;
+interface BLEPermissionListener{
+    void onEnabled();
+    void onDisabled();
+}
 
 class BLEDevice extends Device {
 

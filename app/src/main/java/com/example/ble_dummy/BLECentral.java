@@ -185,7 +185,7 @@ public class BLECentral {
             }
         }
         @SuppressLint("MissingPermission")
-        @Override
+//        @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.d(TAG, "Notifications failed to be enabled!");
@@ -223,7 +223,6 @@ public class BLECentral {
                 gatt.writeCharacteristic(characteristic);
             }
         }
-
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {

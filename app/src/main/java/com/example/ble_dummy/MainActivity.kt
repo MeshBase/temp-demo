@@ -172,7 +172,8 @@ fun MainScreen(navController: NavController, modifier: Modifier = Modifier, ) {
 
     // Function to request Bluetooth permissions based on Android version
     fun requestBluetoothPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val permissions = intArrayOf();
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // Android 12+ uses these permissions
             arrayOf(
                 Manifest.permission.BLUETOOTH_CONNECT,
