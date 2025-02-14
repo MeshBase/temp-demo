@@ -49,14 +49,6 @@ public class BLEPeripheral {
                     }
                 }
             }
-
-
-            @Override
-            public void onExecuteWrite(BluetoothDevice device, int requestId, boolean execute) {
-                super.onExecuteWrite(device, requestId, execute);
-                Log.d(TAG, "on execute write was called");
-            }
-
             @SuppressLint("MissingPermission")
             @Override
             public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
