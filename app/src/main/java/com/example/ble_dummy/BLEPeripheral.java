@@ -23,7 +23,6 @@ import java.util.UUID;
 public class BLEPeripheral {
     public static final String TAG = "my_peripheral";
 
-
     private BluetoothGattServer gattServer;
     private BluetoothGattCharacteristic messageCharacteristic;
     private Context context;
@@ -33,11 +32,8 @@ public class BLEPeripheral {
         private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
             @SuppressLint("MissingPermission")
             @Override
-            public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId,
-                                                     BluetoothGattCharacteristic characteristic, boolean preparedWrite,
-                                                     boolean responseNeeded, int offset, byte[] value) {
+            public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
 
-                // Handle writes to CHAR_UUID
                 if (characteristic.getUuid().equals(CHAR_UUID)) {
                     String message = new String(value, StandardCharsets.UTF_8);
                     Log.d(TAG, "Received: " + message);
@@ -58,6 +54,17 @@ public class BLEPeripheral {
                     callback.onDeviceDisconnected(device.getName()==null?"unknown": device.getName());
                 }else{
                     callback.onDeviceConnected(device.getName()==null?"unknown": device.getName());
+                }
+            }
+
+            @SuppressLint("MissingPermission")
+            @Override
+            public void onDescriptorWriteRequest( BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value ) {
+                Log.d(TAG,"descriptor write request received");
+                if (descriptor.getUuid().equals(CommonConstants.CENTRAL_NOTIF_UUID)) {
+                    if (responseNeeded) {
+                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
+                    }
                 }
             }
         };
@@ -106,10 +113,18 @@ public class BLEPeripheral {
         );
 
 
-        BluetoothGattDescriptor writeDescriptor = new BluetoothGattDescriptor( CommonConstants.PERIPHERAL_NOTIF_UUID, BluetoothGattDescriptor.PERMISSION_WRITE );
+        BluetoothGattDescriptor writeDescriptor = new BluetoothGattDescriptor( CommonConstants.CENTRAL_NOTIF_UUID, BluetoothGattDescriptor.PERMISSION_WRITE );
         messageCharacteristic.addDescriptor(writeDescriptor);
 
+//        the uuid of the characteristic is already the value, no need to read
+        BluetoothGattCharacteristic idCharacterstic = new BluetoothGattCharacteristic(
+                UUID.randomUUID(),
+                BluetoothGattCharacteristic.PROPERTY_READ,
+                BluetoothGattCharacteristic.PERMISSION_READ
+        );
+
         service.addCharacteristic(messageCharacteristic);
+//        service.addCharacteristic(idCharacterstic);
         gattServer.addService(service);
     }
 
@@ -123,8 +138,6 @@ public class BLEPeripheral {
                 .setConnectable(true)
                 .setTimeout(0) // No timeout for Samsung
                 .build();
-
-        // Start advertising with retry logic
 
         AdvertiseData data = new AdvertiseData.Builder()
                 .setIncludeDeviceName(true)

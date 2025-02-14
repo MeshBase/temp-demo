@@ -149,20 +149,46 @@ public class BLECentral {
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
-            // ... rest unchanged
+            if (status != BluetoothGatt.GATT_SUCCESS){
+                Log.d(TAG, "Services discovery failed for"+gatt.getDevice().getName());
+            }
             BluetoothGattService service = gatt.getService(CommonConstants.SERVICE_UUID);
-            if (service != null) {
-                BluetoothGattCharacteristic characteristic = service.getCharacteristic(CommonConstants.CHAR_UUID);
+            if (service == null) {
+                Log.e(TAG, "Service not found");
+                return;
+            }
 
-                // Enable notifications
-                gatt.setCharacteristicNotification(characteristic, true);
+            BluetoothGattCharacteristic characteristic = service.getCharacteristic(CommonConstants.CHAR_UUID);
+            if (characteristic == null) {
+                Log.e(TAG, "message Characteristic not found");
+                return;
+            }
 
-                // Write to CCCD
-                BluetoothGattDescriptor descriptor = characteristic.getDescriptor( CommonConstants.CENTRAL_NOTIF_UUID );
-                if (descriptor != null) {
-                    descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                    gatt.writeDescriptor(descriptor);
-                }
+            //enable notification
+            gatt.setCharacteristicNotification(characteristic, true);
+            BluetoothGattDescriptor descriptor = characteristic.getDescriptor( CommonConstants.CENTRAL_NOTIF_UUID );
+            if (descriptor == null) {
+                Log.e(TAG, "descriptor not found");
+                return;
+            }
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            gatt.writeDescriptor(descriptor);
+
+//            get device uuid
+            BluetoothGattCharacteristic idCharacterstic = service.getCharacteristics().get(1);
+            if (idCharacterstic == null) {
+                Log.e(TAG, "id Characteristic not found");
+                return;
+            }
+
+            Log.d(TAG, "got id of " + idCharacterstic.getUuid().toString() + " from"+ gatt.getDevice().getName());
+        }
+
+        @Override
+        public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "Notifications enabled!");
+                // Now you can safely expect notifications from the peripheral.
             }
         }
     };
