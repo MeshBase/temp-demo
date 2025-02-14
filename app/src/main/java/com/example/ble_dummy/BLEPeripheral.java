@@ -114,10 +114,6 @@ public class BLEPeripheral {
         );
 
 
-        if (Build.MANUFACTURER.equalsIgnoreCase("samsung")) {
-            messageCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-        }
-
         BluetoothGattDescriptor writeDescriptor = new BluetoothGattDescriptor(
                 UUID.fromString("00002901-0000-1000-8000-00805f9b34fb"), // Characteristic User Description
                 BluetoothGattDescriptor.PERMISSION_WRITE
