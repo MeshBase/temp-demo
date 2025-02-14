@@ -17,6 +17,8 @@ import java.util.*;
 class CommonConstants {
     public static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
     public static final UUID CHAR_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
+    public  static  final  UUID CENTRAL_NOTIF_UUID = UUID.fromString("00002901-0000-1000-8000-00805f9b34fb" );
+    public  static  final  UUID PERIPHERAL_NOTIF_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb" );
 }
 
 public class BLECentral {
@@ -156,9 +158,7 @@ public class BLECentral {
                 gatt.setCharacteristicNotification(characteristic, true);
 
                 // Write to CCCD
-                BluetoothGattDescriptor descriptor = characteristic.getDescriptor(
-                        UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
-                );
+                BluetoothGattDescriptor descriptor = characteristic.getDescriptor( CommonConstants.CENTRAL_NOTIF_UUID );
                 if (descriptor != null) {
                     descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                     gatt.writeDescriptor(descriptor);

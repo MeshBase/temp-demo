@@ -106,10 +106,7 @@ public class BLEPeripheral {
         );
 
 
-        BluetoothGattDescriptor writeDescriptor = new BluetoothGattDescriptor(
-                UUID.fromString("00002901-0000-1000-8000-00805f9b34fb"), // Characteristic User Description
-                BluetoothGattDescriptor.PERMISSION_WRITE
-        );
+        BluetoothGattDescriptor writeDescriptor = new BluetoothGattDescriptor( CommonConstants.PERIPHERAL_NOTIF_UUID, BluetoothGattDescriptor.PERMISSION_WRITE );
         messageCharacteristic.addDescriptor(writeDescriptor);
 
         service.addCharacteristic(messageCharacteristic);
