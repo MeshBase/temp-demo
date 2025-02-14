@@ -128,13 +128,9 @@ public class BLEPeripheral {
     @SuppressLint("MissingPermission")
     public void startAdvertising() {
         Log.d(TAG, "Starting advertising");
-        int txPower = Build.MANUFACTURER.equalsIgnoreCase("samsung")
-                ? AdvertiseSettings.ADVERTISE_TX_POWER_HIGH
-                : AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM;
 
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
                 .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-                .setTxPowerLevel(txPower)
                 .setConnectable(true)
                 .setTimeout(0) // No timeout for Samsung
                 .build();
