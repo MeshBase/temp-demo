@@ -28,7 +28,6 @@ public class BLECentral {
     private final Map<String, BluetoothGatt> connectedDevices = new HashMap<>();
     private Context context;
     private ConnectionCallback callback;
-    private Set<String> messageSet = new HashSet<String>();
 
     public interface ConnectionCallback {
         void onDeviceFound(BluetoothDevice device);
@@ -55,10 +54,7 @@ public class BLECentral {
     @SuppressLint("MissingPermission")
     public void startScanning() {
         ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(CommonConstants.SERVICE_UUID)).build();
-        scanner.startScan(Collections.singletonList(filter),
-                new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
-                scanCallback
-        );
+        scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCallback);
         Log.d(TAG, "Scanning started");
     }
 
@@ -68,14 +64,8 @@ public class BLECentral {
         attemptConnect(device);
     }
 
-
     @SuppressLint("MissingPermission")
     public void sendMessageToAllDevices(String message) {
-        if (messageSet.contains(message)) {
-            Log.d(TAG, "already sent message :" + message);
-            return;
-        }
-        messageSet.add(message);
         for (BluetoothGatt gatt : connectedDevices.values()) {
             BluetoothGattCharacteristic characteristic =
                     gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.CHAR_UUID); // Use CHAR_UUID
@@ -107,7 +97,7 @@ public class BLECentral {
         long delay = count * 150L; //0 wait time for first try
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             connectingDevices.add(address);
-            retryCount.put(address, count+1);
+            retryCount.put(address, count + 1);
             device.connectGatt(context, false, gattCallback);
         }, delay);
     }
@@ -132,7 +122,7 @@ public class BLECentral {
 
             if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 Log.w(TAG, "Disconnected from: " + address);
-                if (connectedDevices.containsKey(address)){
+                if (connectedDevices.containsKey(address)) {
                     callback.onDeviceDisconnected(gatt.getDevice());
                 }
                 connectedDevices.remove(address);
@@ -145,8 +135,6 @@ public class BLECentral {
                 retryCount.put(address, 0);
             }
         }
-
-        ;
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
