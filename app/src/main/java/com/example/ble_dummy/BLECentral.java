@@ -175,14 +175,14 @@ public class BLECentral {
             Log.d(TAG, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+characteristic.getValue());
 
             if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
-                try{
-                    Log.d(TAG, "here");
+                Log.d(TAG, "id requested");
                     UUID uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
                     Log.d(TAG, "Device UUID! of " + gatt.getDevice().getName() + " is : " + uuid);
-                }catch (Exception e){
-                    Log.e(TAG, "error on read characteristic"+e);
-                    throw e;
-                }
+
+                    UUID myId = UUID.randomUUID();
+                    characteristic.setValue(ConvertUUID.uuidToBytes(myId));
+                    characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                    gatt.writeCharacteristic(characteristic);
             }
         }
 
