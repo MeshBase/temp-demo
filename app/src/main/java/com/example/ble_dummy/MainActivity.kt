@@ -85,6 +85,7 @@ import com.example.ble_dummy.ui.theme.BLE_DummyTheme
 //    }
 //}
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.Scaffold
@@ -101,9 +102,20 @@ class MainActivity : ComponentActivity() {
     val TAG = "my_kotlin_screen"
     var bleEnabler: BLEEnabler? = null
 
+    var perm: BLEPermissions? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 //        enableEdgeToEdge() // Ensure this function is defined
+        val that = this;
+        this.perm = BLEPermissions( this,object :BLEPermissionListener{
+            override fun onEnabled() {
+                Toast.makeText(that, "Bluetooth enabled", Toast.LENGTH_SHORT).show();
+        }
+            override fun onDisabled() {
+                Toast.makeText(that, "Bluetooth disabled", Toast.LENGTH_SHORT).show()
+        }
+        } );
 
         setContent {
             BLE_DummyTheme {
@@ -119,7 +131,39 @@ class MainActivity : ComponentActivity() {
                     ) {
                         // The main screen route that contains your buttons
                         composable("main") {
-                            MainScreen(navController = navController)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Button(
+                                    onClick = { navController.navigate("central") },
+                                    modifier = Modifier.padding(8.dp)
+                                ) {
+                                    Text("Be Central")
+                                }
+
+                                Button(
+                                    onClick = { navController.navigate("peripheral") },
+                                    modifier = Modifier.padding(8.dp)
+                                ) {
+                                    Text("Be Peripheral")
+                                }
+
+                                // New button for requesting Bluetooth permissions
+                                Button(
+                                    onClick = {
+                                        that.perm?.enable()
+                                        Log.d(TAG, "requesting permissions from button$perm");
+
+                                              },
+                                    modifier = Modifier.padding(8.dp)
+                                ) {
+                                    Text("Request Bluetooth Permissions")
+                                }
+                            }
                         }
                         // Define the "central" route destination
                         composable("central") {
@@ -151,76 +195,3 @@ class MainActivity : ComponentActivity() {
 //        }
 //    }
 //}
-
-
-
-    @Composable
-fun MainScreen(navController: NavController, modifier: Modifier = Modifier, ) {
-    val context = LocalContext.current
-
-    // Launcher to request multiple permissions
-    val permissionsLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        // Check if all permissions are granted
-        if (permissions.all { it.value }) {
-            Toast.makeText(context, "All permissions granted!", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "Some permissions denied.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // Function to request Bluetooth permissions based on Android version
-    fun requestBluetoothPermissions() {
-        val permissions = intArrayOf();
-         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ uses these permissions
-            arrayOf(
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_ADVERTISE,
-                Manifest.permission.ACCESS_FINE_LOCATION
-
-            )
-        } else {
-            // For Android 11 and below, use the legacy permissions
-            arrayOf(
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
-        }
-        permissionsLauncher.launch(permissions)
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Button(
-            onClick = { navController.navigate("central") },
-            modifier = Modifier.padding(8.dp)
-        ) {
-            Text("Be Central")
-        }
-
-        Button(
-            onClick = { navController.navigate("peripheral") },
-            modifier = Modifier.padding(8.dp)
-        ) {
-            Text("Be Peripheral")
-        }
-
-        // New button for requesting Bluetooth permissions
-        Button(
-            onClick = { requestBluetoothPermissions() },
-            modifier = Modifier.padding(8.dp)
-        ) {
-            Text("Request Bluetooth Permissions")
-        }
-    }
-}

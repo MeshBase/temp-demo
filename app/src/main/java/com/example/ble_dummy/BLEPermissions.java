@@ -2,12 +2,14 @@ package com.example.ble_dummy;
 import static android.Manifest.permission.*;
 
 import static androidx.activity.result.contract.ActivityResultContracts.*;
+import static androidx.core.content.ContextCompat.registerReceiver;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.util.Log;
@@ -24,7 +26,7 @@ import java.util.ArrayList;
 
 public class BLEPermissions {
 
-    private String TAG = "my_BleEnabler";
+    private String TAG = "my_BlePermissions";
 
     private ComponentActivity activity;
     private BLEPermissionListener listener;
@@ -32,7 +34,7 @@ public class BLEPermissions {
     ActivityResultLauncher<String[]> permissionLauncher;
 
 
-    public BLEPermissions(ComponentActivity activity, BLEPermissionListener listener) {
+    BLEPermissions(ComponentActivity activity, BLEPermissionListener listener) {
         this.activity = activity;
         this.listener = listener;
 
@@ -48,10 +50,12 @@ public class BLEPermissions {
             }
         });
 
-        new BroadcastReceiver() {
+        IntentFilter filter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+        BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
                 String action = intent.getAction();
+                Log.d(TAG, "broadcast received" + action);
 
                 if (!BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) return;
                 int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
@@ -59,18 +63,25 @@ public class BLEPermissions {
                     listener.onDisabled();
                 } else if (state == BluetoothAdapter.STATE_ON && hasPermissions()) {
                     listener.onEnabled();
+                } else {
+                    Log.d(TAG, "bad bluetooth state");
                 }
             }
         };
+        activity.registerReceiver(receiver, filter);
     }
 
 
     public void enable() {
         //TODO: handle permanent denial of permissions
-        if (isEnabled()) return;
+        if (isEnabled()) {
+            listener.onEnabled();
+            return;
+        };
         Log.d(TAG, "trying to enable bluetooth and its permissions");
         //permissions first, then bluetooth
         if (!hasPermissions()) {
+            Log.d(TAG, "requesting permissions");
             permissionLauncher.launch(getPermissions());
         } else {
             promptBluetooth();
@@ -161,7 +172,9 @@ public class BLEPermissions {
         return hasPermissions() && bluetoothIsOn();
     }
 
+    @SuppressLint("MissingPermission")
     private void promptBluetooth() {
+        Log.d(TAG, "prompting bluetooth");
         Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
         activity.startActivity(enableBtIntent);
     }
