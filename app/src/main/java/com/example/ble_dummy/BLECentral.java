@@ -65,21 +65,7 @@ public class BLECentral {
 
     @SuppressLint("MissingPermission")
     public void connectToDevice(BluetoothDevice device) {
-        String address = device.getAddress();
-        retryCount.put(address, 0);
-
-        // Prevent duplicate connection attempts
-        if (connectingDevices.contains(address)) {
-            Log.d(TAG, "Already connecting to: " + address);
-            return;
-        }
-        if (connectedDevices.containsKey(address)) {
-            Log.d(TAG, "Already connected to: " + address);
-            return;
-        }
-
-        connectingDevices.add(address);
-        device.connectGatt(context, false, gattCallback);
+        attemptConnect(device);
     }
 
 
