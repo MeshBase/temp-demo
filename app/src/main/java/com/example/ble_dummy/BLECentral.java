@@ -140,10 +140,7 @@ public class BLECentral {
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             String message = new String(characteristic.getValue());
             callback.onMessageReceived(message);
-
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                sendMessageToAllDevices(message); // Forward message
-            }, 500);
+            sendMessageToAllDevices(message);
         }
 
         @SuppressLint("MissingPermission")
