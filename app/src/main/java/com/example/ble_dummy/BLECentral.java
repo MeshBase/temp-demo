@@ -134,6 +134,7 @@ public class BLECentral {
     };
 
 
+    //Order of call backs overrides resembles the "handshake" steps
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         @Override
@@ -156,36 +157,6 @@ public class BLECentral {
                 retryCount.put(address, 0);
             }
         }
-
-        @Override
-        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-            String message = new String(characteristic.getValue());
-            callback.onMessageReceived(message);
-            sendMessageToAllDevices(message);
-        }
-
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            super.onCharacteristicRead(gatt, characteristic, status);
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.d(TAG, "Failed to read characteristic from "+gatt.getDevice().getName());
-                return;
-            }
-            Log.d(TAG, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+characteristic.getValue());
-
-            if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
-                Log.d(TAG, "id requested");
-                    UUID uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
-                    Log.d(TAG, "Device UUID! of " + gatt.getDevice().getName() + " is : " + uuid);
-
-                    UUID myId = UUID.randomUUID();
-                    characteristic.setValue(ConvertUUID.uuidToBytes(myId));
-                    characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-                    gatt.writeCharacteristic(characteristic);
-            }
-        }
-
         @SuppressLint("MissingPermission")
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
@@ -213,7 +184,6 @@ public class BLECentral {
                 throw  e;
             }
         }
-
         @SuppressLint("MissingPermission")
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
@@ -232,5 +202,34 @@ public class BLECentral {
                 }
             }
         }
-    };
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicRead(gatt, characteristic, status);
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "Failed to read characteristic from "+gatt.getDevice().getName());
+                return;
+            }
+            Log.d(TAG, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+characteristic.getValue());
+
+            if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
+                Log.d(TAG, "id requested");
+                UUID uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
+                Log.d(TAG, "Device UUID! of " + gatt.getDevice().getName() + " is : " + uuid);
+
+                UUID myId = UUID.randomUUID();
+                characteristic.setValue(ConvertUUID.uuidToBytes(myId));
+                characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                gatt.writeCharacteristic(characteristic);
+            }
+        }
+
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
+            String message = new String(characteristic.getValue());
+            callback.onMessageReceived(message);
+            sendMessageToAllDevices(message);
+        }
+       };
 }

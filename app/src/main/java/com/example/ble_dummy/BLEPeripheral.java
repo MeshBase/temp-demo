@@ -22,48 +22,10 @@ public class BLEPeripheral {
     private BluetoothGattCharacteristic messageCharacteristic;
     private Context context;
     private MessageCallback callback;
-    private BluetoothManager btManager; // Add this
+    private BluetoothManager btManager;
 
+    //Order of call backs overrides resembles the "handshake" steps
     private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
-
-            if (characteristic.getUuid().equals(MESSAGE_UUID)) {
-                String message = new String(value, StandardCharsets.UTF_8);
-                Log.d(TAG, "Received: " + message);
-                callback.onMessageSent(message);
-
-                // Required response
-                if (responseNeeded) {
-                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
-                }
-            } else if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
-                Log.d(TAG, "id has been given");
-                try {
-                    UUID deviceUUID = ConvertUUID.bytesToUUID(value);
-                    Log.d(TAG, "Device UUID! of " + device.getName() + " is : " + deviceUUID);
-                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
-                } catch (Exception e) {
-                    Log.d(TAG, "couldnt recieve id" + e);
-                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
-                    throw e;
-                }
-
-            }
-        }
-
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
-            super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
-            Log.d(TAG, "Read request received from " + device.getName() + ":" + characteristic.getUuid());
-
-            if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
-                UUID deviceUUID = UUID.randomUUID();
-                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(deviceUUID));
-            }
-        }
 
         @SuppressLint("MissingPermission")
         @Override
@@ -87,6 +49,42 @@ public class BLEPeripheral {
                 }
             }
         }
+
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
+            super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
+            Log.d(TAG, "Read request received from " + device.getName() + ":" + characteristic.getUuid());
+
+            if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
+                UUID deviceUUID = UUID.randomUUID();
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(deviceUUID));
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+
+            if (characteristic.getUuid().equals(MESSAGE_UUID)) {
+                String message = new String(value, StandardCharsets.UTF_8);
+                Log.d(TAG, "Received: " + message);
+                callback.onMessageSent(message);
+
+                // Required response
+                if (responseNeeded) {
+                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
+                }
+            } else if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
+                Log.d(TAG, "id has been given");
+                UUID deviceUUID = ConvertUUID.bytesToUUID(value);
+                Log.d(TAG, "Device UUID! of " + device.getName() + " is : " + deviceUUID);
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
+            }
+        }
+
+
     };
 
     public interface MessageCallback {
