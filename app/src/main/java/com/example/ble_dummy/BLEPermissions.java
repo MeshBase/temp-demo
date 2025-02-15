@@ -149,7 +149,6 @@ public class BLEPermissions {
     private String[] getPermissions() {
         ArrayList<String> permissions = new ArrayList<>();
         //following startScan permissions -  https://developer.android.com/reference/android/bluetooth/le/BluetoothLeScanner#startScan(android.bluetooth.le.ScanCallback)
-        //line by line
         permissions.add(ACCESS_COARSE_LOCATION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             permissions.add(ACCESS_FINE_LOCATION);
@@ -163,16 +162,14 @@ public class BLEPermissions {
             permissions.add(ACCESS_FINE_LOCATION);
         }
 
-        //stop scan uses the same permissions
+        //stop scan uses the same permissions as start scan
 
         // following connect gatt permissions - https://developer.android.com/reference/android/bluetooth/BluetoothDevice#connectGatt(android.content.Context,%20boolean,%20android.bluetooth.BluetoothGattCallback)
-        //line by line
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissions.add(BLUETOOTH_CONNECT);
         }
 
         //following advertise permissions - https://developer.android.com/reference/android/bluetooth/le/BluetoothLeAdvertiser
-        //line by line
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissions.add(BLUETOOTH_ADVERTISE);
         }
@@ -181,7 +178,6 @@ public class BLEPermissions {
         }
 
         //following device.getname permissions - https://developer.android.com/reference/android/bluetooth/BluetoothDevice#public-methods
-        //line by line
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
             permissions.add(BLUETOOTH);
         }
@@ -191,8 +187,6 @@ public class BLEPermissions {
         }
 
         //following gatt.writeCharacteristic permissions -https://developer.android.com/reference/android/bluetooth/BluetoothGatt#writeCharacteristic(android.bluetooth.BluetoothGattCharacteristic)
-        //line by line
-
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
             permissions.add(BLUETOOTH);
         }
@@ -202,19 +196,17 @@ public class BLEPermissions {
 
         //gatt.readCharacteristic has same permissions
         //gattServer.sendResponse has same permissions
-
         // new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE) also uses the above permissions
+
         return permissions.toArray(new String[0]);
     }
 
     private boolean hasPermissions() {
-
         for (String permission : this.getPermissions()) {
             if (ContextCompat.checkSelfPermission(activity, permission) != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
         }
-
         return true;
     }
 
@@ -232,7 +224,6 @@ public class BLEPermissions {
         } else {
             return manager.isProviderEnabled(LocationManager.GPS_PROVIDER) || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
         }
-
     }
 
     public boolean isEnabled() {
