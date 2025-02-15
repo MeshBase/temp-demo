@@ -19,6 +19,7 @@ androidx-compose = "1.6.3"
 androidx-compose-material3 = "1.2.1"
 androidx-navigation-compose = "2.7.7"
 media3CommonKtx = "1.5.1"
+playServicesLocation = "21.3.0"
 
 
 [libraries]
@@ -49,6 +50,7 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics", version.ref = "androidx-compose" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling", version.ref = "androidx-compose" }
 androidx-media3-common-ktx = { group = "androidx.media3", name = "media3-common-ktx", version.ref = "media3CommonKtx" }
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
