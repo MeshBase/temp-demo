@@ -46,6 +46,10 @@ public class BLECentral {
     private final Map<String, BluetoothGatt> connectedDevices = new HashMap<>();
     private final Context context;
     private final ConnectionCallback callback;
+    private boolean isOn = false;
+    // To help prevent calling scanner.scan if already scanning
+    private  boolean isScanning = false;
+
 
     public interface ConnectionCallback {
         void onDeviceFound(BluetoothDevice device);
@@ -60,7 +64,7 @@ public class BLECentral {
     }
 
     public final Map<String, Integer> retryCount = new HashMap<>();
-    private static final int MAX_RETRIES = 3;
+    private static final int MAX_RETRIES = 5;
 
     public BLECentral(Context context, ConnectionCallback callback) {
         this.context = context;
@@ -70,16 +74,48 @@ public class BLECentral {
     }
 
     @SuppressLint("MissingPermission")
-    public void startScanning() {
+    public void start() {
+        if (isOn) {
+            Log.d(TAG, "already on");
+            return;
+        }
+        isOn = true;
         ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(CommonConstants.SERVICE_UUID)).build();
-        scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), scanCallback);
-        Log.d(TAG, "Scanning started");
+        if (!isScanning){
+            Log.d(TAG, "Scanning started");
+            scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), scanCallback);
+            isScanning = true;
+        }
+        Log.d(TAG, "central started");
     }
 
 
     @SuppressLint("MissingPermission")
     public void connectToDevice(BluetoothDevice device) {
         attemptConnect(device);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void attemptConnect(BluetoothDevice device) {
+        String address = device.getAddress();
+        int count = retryCount.getOrDefault(address, 0);
+
+
+        boolean tooManyRetries = count >= MAX_RETRIES;
+        boolean alreadyConnecting = connectingDevices.contains(address);
+        boolean alreadyConnected = connectedDevices.containsKey(address);
+
+        if (!isOn || tooManyRetries || alreadyConnecting || alreadyConnected) {
+            Log.d(TAG, "dropping connecting to" + device.getName() + "due to" + "too many retries:" + tooManyRetries + " already connecting:" + alreadyConnecting + " already connected:" + alreadyConnected);
+            return;
+        }
+
+        long delay = count * 150L; //0 wait time for first try
+        connectingDevices.add(address); //
+        retryCount.put(address, count + 1);
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            device.connectGatt(context, false, gattCallback);
+        }, delay);
     }
 
     @SuppressLint("MissingPermission")
@@ -96,28 +132,28 @@ public class BLECentral {
         callback.onMessageForwarded(message + " to " + connectedDevices.size() + " devices");
     }
 
-
     @SuppressLint("MissingPermission")
-    private void attemptConnect(BluetoothDevice device) {
-        String address = device.getAddress();
-        int count = retryCount.getOrDefault(address, 0);
-
-
-        boolean tooManyRetries = count >= MAX_RETRIES;
-        boolean alreadyConnecting = connectingDevices.contains(address);
-        boolean alreadyConnected = connectedDevices.containsKey(address);
-
-        if (tooManyRetries || alreadyConnecting || alreadyConnected) {
-            Log.d(TAG, "dropping connecting to" + device.getName() + "due to" + "too many retries:" + tooManyRetries + " already connecting:" + alreadyConnecting + " already connected:" + alreadyConnected);
+    public void stop(){
+        if (!isOn){
+            Log.d(TAG, "already off");
             return;
         }
+        isOn = false;
+        Log.d(TAG, "disconnecting to all devices:"+ connectedDevices.size());
+        for (BluetoothGatt gatt : connectedDevices.values()) {
+            gatt.disconnect();
+        }
+        retryCount.clear();
 
-        long delay = count * 150L; //0 wait time for first try
+
+        //Because android only allows 5 scanner.scan() calls per 30seconds, so always delay by 10s to be safe
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            connectingDevices.add(address);
-            retryCount.put(address, count + 1);
-            device.connectGatt(context, false, gattCallback);
-        }, delay);
+            if (!isOn & isScanning){
+                Log.d(TAG,"stopped scanning after 10seconds");
+                isScanning = false;
+                scanner.stopScan(scanCallback);
+            }
+        }, 10_000);
     }
 
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -125,12 +161,19 @@ public class BLECentral {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
+            String address = device.getAddress();
 
-            if (!connectingDevices.contains(device.getAddress()) && !connectedDevices.containsKey(device.getAddress())){
-                Log.d(TAG, "Found device: " + device.getName() + " with address: " + device.getAddress());
-                callback.onDeviceFound(device);
-                connectToDevice(device);
+            boolean tooManyRetries = retryCount.getOrDefault(address, 0) >= MAX_RETRIES;
+            boolean alreadyConnecting = connectingDevices.contains(address);
+            boolean alreadyConnected = connectedDevices.containsKey(address);
+
+            if (!isOn || tooManyRetries || alreadyConnecting || alreadyConnected) {
+                return;
             }
+
+            Log.d(TAG, "Found device: " + device.getName() + " with address: " + device.getAddress());
+            callback.onDeviceFound(device);
+            connectToDevice(device);
         }
     };
 
@@ -141,31 +184,51 @@ public class BLECentral {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
             String address = gatt.getDevice().getAddress();
-            connectingDevices.remove(address);
+            String name = gatt.getDevice().getName();
+
 
             if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                Log.w(TAG, "Disconnected from: " + address);
+                Log.w(TAG, "Disconnected from: " + name + address);
                 if (connectedDevices.containsKey(address)) {
                     callback.onDeviceDisconnected(gatt.getDevice());
                 }
+
+                connectingDevices.remove(address);
                 connectedDevices.remove(address);
-                attemptConnect(gatt.getDevice());
-            } else if (newState == BluetoothGatt.STATE_CONNECTED && !connectedDevices.containsKey(address)) {
-                callback.onDeviceConnected(gatt.getDevice());
-                Log.d(TAG, "Connected to: " + address);
-                connectedDevices.put(address, gatt);
-                gatt.discoverServices();
-                retryCount.put(address, 0);
+
+                if (isOn){
+                    attemptConnect(gatt.getDevice());
+                }else{
+                    gatt.close();
+                }
+
+            } else if (newState == BluetoothGatt.STATE_CONNECTED) {
+                if (connectedDevices.containsKey(address)){
+                    Log.e(TAG, "Same device connected twice!"+name+address);
+                }
+
+                if (isOn){
+                    callback.onDeviceConnected(gatt.getDevice());
+                    Log.d(TAG, "Connected to: " + name+address);
+                    connectingDevices.remove(address);
+                    connectedDevices.put(address, gatt);
+                    gatt.discoverServices();
+                    retryCount.remove(address);
+                }else{
+                    Log.d(TAG, "rejecting new connection after being turned off: "+name+address);
+                    gatt.disconnect();
+                }
             }
         }
         @SuppressLint("MissingPermission")
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-            Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
+
             if (status != BluetoothGatt.GATT_SUCCESS){
                 Log.d(TAG, "Services discovery failed for"+gatt.getDevice().getName());
                 return;
             }
+            Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
 
             try{
                 BluetoothGattService service = gatt.getService(CommonConstants.SERVICE_UUID);
@@ -177,8 +240,6 @@ public class BLECentral {
                 descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                 gatt.writeDescriptor(descriptor);
 
-
-                Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
             }catch (Exception e){
                 //see if any null errors
                 Log.e(TAG, "error on discover services"+e);
@@ -193,7 +254,7 @@ public class BLECentral {
                 return;
             }
             if (descriptor.getUuid().equals(CommonConstants.NOTIF_DESCRIPTOR_UUID)){
-                Log.d(TAG, "Notifications enabled!");
+                Log.d(TAG, "Notifications enabled for"+ gatt.getDevice().getName()+gatt.getDevice().getAddress());
 
                 //then get device uuid
                 BluetoothGattCharacteristic idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.ID_UUID);
@@ -225,9 +286,11 @@ public class BLECentral {
             }
         }
 
+        @SuppressLint("MissingPermission")
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             String message = new String(characteristic.getValue());
+            Log.d(TAG, "received message from"+gatt.getDevice().getName()+gatt.getDevice().getAddress());
             callback.onMessageReceived(message);
             sendMessageToAllDevices(message);
         }

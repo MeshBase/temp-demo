@@ -2,9 +2,7 @@ package com.example.ble_dummy
 
 // CentralScreen.kt
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -15,7 +13,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -76,9 +73,13 @@ fun CentralScreen() {
     }
 
     Column(modifier = Modifier.padding(16.dp)) {
-        Button(onClick = { bleCentral.startScanning() }) {
+        Button(onClick = { bleCentral.start() }) {
             Text("Scan Devices")
         }
+        Button(onClick = { bleCentral.stop() }) {
+            Text("Stop")
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn {
             items(devices) { device ->

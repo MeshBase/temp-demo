@@ -39,7 +39,7 @@ public class BLEPeripheral {
             }
         }
 
-//        @SuppressLint("MissingPermission")
+        @SuppressLint("MissingPermission")
         @Override
         public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
             Log.d(TAG, "descriptor write request received");
