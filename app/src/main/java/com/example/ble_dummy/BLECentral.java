@@ -76,7 +76,7 @@ public class BLECentral {
     @SuppressLint("MissingPermission")
     public void startScanning() {
         ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(CommonConstants.SERVICE_UUID)).build();
-        scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCallback);
+        scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), scanCallback);
         Log.d(TAG, "Scanning started");
     }
 
@@ -128,8 +128,12 @@ public class BLECentral {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
-            callback.onDeviceFound(device);
-            scanner.stopScan(this);//Stop now
+
+            if (!connectingDevices.contains(device.getAddress()) && !connectedDevices.containsKey(device.getAddress())){
+                Log.d(TAG, "Found device: " + device.getName() + " with address: " + device.getAddress());
+                callback.onDeviceFound(device);
+                connectToDevice(device);
+            }
         }
     };
 
@@ -185,7 +189,7 @@ public class BLECentral {
             }
         }
         @SuppressLint("MissingPermission")
-//        @Override
+        @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.d(TAG, "Notifications failed to be enabled!");
