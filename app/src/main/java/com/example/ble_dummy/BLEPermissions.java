@@ -62,18 +62,25 @@ public class BLEPermissions {
         }
     };
 
-   ActivityResultCallback<ActivityResult> locationCallback  = new ActivityResultCallback<>() {
-       @Override
-       public void onActivityResult(ActivityResult res) {
-           if (!locationIsOn()) {
-               listener.onDisabled();
-           } else if (isEnabled()) {
-               listener.onEnabled();
-           } else {
-               enable();
-           }
-       }
-   };
+   BroadcastReceiver locationCallback  = new BroadcastReceiver() {
+               @Override
+               public void onReceive(Context context, Intent intent) {
+                   String action = intent.getAction();
+                   Log.d(TAG, "broadcast received" + action);
+
+                   //may risk receiving events that are not about the location being turned on or off
+                   //assuming that multiple listener.enable() calls don't cause problems
+
+                   if (!locationIsOn()) {
+                       listener.onDisabled();
+                   } else if (isEnabled()) {
+                       listener.onEnabled();
+                   } else {
+                       enable();
+                   }
+               }
+           };
+
 
 
     BroadcastReceiver bluetoothCallback = new BroadcastReceiver() {
@@ -102,13 +109,22 @@ public class BLEPermissions {
         this.activity = activity;
         this.listener = listener;
 
-        //permission call back
+        //setup permissions
         permissionLauncher = activity.registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), permissionsCallback);
-        locationLauncher = activity.registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), locationCallback);
 
 
+        //setup bluetooth
         IntentFilter bluetoothFilter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
         activity.registerReceiver(bluetoothCallback, bluetoothFilter);
+
+
+        //setup location
+        locationLauncher = activity.registerForActivityResult(
+                new ActivityResultContracts.StartIntentSenderForResult(),
+                o -> Log.d(TAG, "location prompt ended")
+        );
+        IntentFilter locationFilter = new IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION);
+        activity.registerReceiver(locationCallback, locationFilter);
     }
 
 
@@ -242,6 +258,7 @@ public class BLEPermissions {
             enable();
         });
 
+        //triggers prompt
         task.addOnFailureListener(activity, e -> {
             Log.e(TAG, "user needs to enable location in settings" + e);
             if (!(e instanceof ResolvableApiException)) {
@@ -253,6 +270,7 @@ public class BLEPermissions {
             Log.e(TAG, "is resolvable exception");
             IntentSenderRequest request = new IntentSenderRequest.Builder(((ResolvableApiException) e).getResolution()).build();
             locationLauncher.launch(request);
+
         });
     }
 
