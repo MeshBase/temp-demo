@@ -1,5 +1,4 @@
 package com.example.ble_dummy;
-// BLECentral.java
 
 import android.annotation.SuppressLint;
 import android.bluetooth.*;
@@ -8,9 +7,6 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-
-import androidx.annotation.NonNull;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -44,12 +40,12 @@ class ConvertUUID {
 public class BLECentral {
     public static final String TAG = "my_central";
 
-    private BluetoothLeScanner scanner;
+    private final BluetoothLeScanner scanner;
 
     private final Set<String> connectingDevices = new HashSet<>();
     private final Map<String, BluetoothGatt> connectedDevices = new HashMap<>();
-    private Context context;
-    private ConnectionCallback callback;
+    private final Context context;
+    private final ConnectionCallback callback;
 
     public interface ConnectionCallback {
         void onDeviceFound(BluetoothDevice device);
@@ -105,6 +101,7 @@ public class BLECentral {
     private void attemptConnect(BluetoothDevice device) {
         String address = device.getAddress();
         int count = retryCount.getOrDefault(address, 0);
+
 
         boolean tooManyRetries = count >= MAX_RETRIES;
         boolean alreadyConnecting = connectingDevices.contains(address);
@@ -214,7 +211,7 @@ public class BLECentral {
                 Log.d(TAG, "Failed to read characteristic from "+gatt.getDevice().getName());
                 return;
             }
-            Log.d(TAG, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+characteristic.getValue());
+            Log.d(TAG, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+ Arrays.toString(characteristic.getValue()));
 
             if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
                 Log.d(TAG, "id requested");
