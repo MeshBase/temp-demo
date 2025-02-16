@@ -116,38 +116,27 @@ class MainActivity : ComponentActivity() {
     var centralsDevices = mutableStateListOf<BluetoothDevice>()
     val context = this;
     val centralCallback = object : BLECentral.ConnectionCallback {
-        @SuppressLint("MissingPermission")
-        override fun onDeviceFound(device: BluetoothDevice) {
-        }
 
-        override fun onMessageReceived(message: String) {
-            Log.d(TAG, "Message recieved: $message")
+        override fun onDataReceived(message: ByteArray) {
             Handler(Looper.getMainLooper()).post {
-                Toast.makeText(context, "Received: $message", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Received: ${String(message, Charsets.UTF_8)}", Toast.LENGTH_LONG).show()
             }
 
-            centralsDevices.forEach { device ->
-                run {
-                    bleCentral?.send(message.toByteArray(), device.address)
-                }
-            }
+//            centralsDevices.forEach { device ->
+//                run {
+//                    bleCentral?.send(message.toByteArray(), device.address)
+//                }
+//            }
         }
 
         @SuppressLint("MissingPermission")
         override fun onDeviceConnected(device: BluetoothDevice) {
-            Log.d(TAG, "Device connected: ${device.name}")
             centralsDevices.add(device);
         }
 
         @SuppressLint("MissingPermission")
         override fun onDeviceDisconnected(device: BluetoothDevice?) {
-
-            Log.d(TAG, "Device disconnected: ${device?.name}")
             centralsDevices.remove(device)
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(context, "Disconnected to ${device?.name}", Toast.LENGTH_SHORT)
-                    .show()
-            }
         }
 
     }
@@ -160,17 +149,16 @@ class MainActivity : ComponentActivity() {
         @SuppressLint("MissingPermission")
         override fun onDeviceConnected(device: BluetoothDevice) {
             peripheralsDevices.add(device)
-            Log.d(TAG, "Central connected: ${device.name}")
         }
 
         @SuppressLint("MissingPermission")
         override fun onDeviceDisconnected(device: BluetoothDevice) {
-            Log.d(TAG, "disconnected to: ${device.name}")
             peripheralsDevices.remove(device);
         }
 
-        override fun onMessageReceived(message: ByteArray, device: BluetoothDevice) {
-            Log.d(TAG, "Message recieved: ${String(message, Charsets.UTF_8)}")
+        override fun onMessageReceived(data: ByteArray, device: BluetoothDevice) {
+            val message = String(data, Charsets.UTF_8)
+            Log.d(TAG, "Message recieved: ${message}")
             Handler(Looper.getMainLooper()).post {
                 Toast.makeText(context, "Message recieved: $message", Toast.LENGTH_SHORT).show()
             }
@@ -192,8 +180,8 @@ class MainActivity : ComponentActivity() {
         this.perm = BLEPermissions(this, object : BLEPermissionListener {
             override fun onEnabled() {
                 Toast.makeText(that, "BLE enabled", Toast.LENGTH_SHORT).show();
-                bleCentral?.start();
-                blePeripheral?.start();
+//                bleCentral?.start();
+//                blePeripheral?.start();
             }
 
             override fun onDisabled() {
@@ -249,11 +237,11 @@ class MainActivity : ComponentActivity() {
                                     items(centralsDevices) { device ->
                                         Row(Modifier.fillMaxWidth().padding(8.dp)) {
                                             Text(
-                                                text = "centrals device - ${device.name ?: "Unknown"} (${device.address})",
+                                                text = "peripherals - ${device.name ?: "Unknown"} (${device.address})",
                                                 modifier = Modifier.weight(1f)
                                             )
                                             Button(onClick = {
-                                                bleCentral?.send("abcd".toByteArray(Charsets.UTF_8), device.address);
+                                                bleCentral?.send(message.toByteArray(Charsets.UTF_8), device.address);
                                             }) {
                                                 Text("Send")
                                             }
@@ -266,11 +254,11 @@ class MainActivity : ComponentActivity() {
                                     items(peripheralsDevices) { device ->
                                         Row(Modifier.fillMaxWidth().padding(8.dp)) {
                                             Text(
-                                                text = "peripherals device - ${device.name ?: "Unknown"} (${device.address})",
+                                                text = "centrals - ${device.name ?: "Unknown"} (${device.address})",
                                                 modifier = Modifier.weight(1f)
                                             )
                                             Button(onClick = {
-                                                blePeripheral?.send("cdef".toByteArray(Charsets.UTF_8), device.address);
+                                                blePeripheral?.send(message.toByteArray(Charsets.UTF_8), device.address);
                                             }) {
                                                 Text("Send")
                                             }

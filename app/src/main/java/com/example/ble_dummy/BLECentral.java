@@ -8,8 +8,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
+
+import kotlin.text.Charsets;
 
 class CommonConstants {
     public static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
@@ -52,9 +53,8 @@ public class BLECentral {
 
 
     public interface ConnectionCallback {
-        void onDeviceFound(BluetoothDevice device);
 
-        void onMessageReceived(String message);
+        void onDataReceived(byte[] data);
 
         void onDeviceConnected(BluetoothDevice device);
 
@@ -174,7 +174,6 @@ public class BLECentral {
             }
 
             Log.d(TAG, "Found device: " + device.getName() + " with address: " + device.getAddress());
-            callback.onDeviceFound(device);
             connectToDevice(device);
         }
     };
@@ -291,9 +290,9 @@ public class BLECentral {
         @SuppressLint("MissingPermission")
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-            String message = new String(characteristic.getValue());
-            Log.d(TAG, "received message from"+gatt.getDevice().getName()+gatt.getDevice().getAddress());
-            callback.onMessageReceived(message);
+            String message = new String(characteristic.getValue(), Charsets.UTF_8);
+            Log.d(TAG, "received message from"+gatt.getDevice().getName()+gatt.getDevice().getAddress()+" message:"+message);
+            callback.onDataReceived(characteristic.getValue());
         }
        };
 }

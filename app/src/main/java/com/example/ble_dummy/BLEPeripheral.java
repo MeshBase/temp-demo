@@ -31,7 +31,6 @@ public class BLEPeripheral {
     public BLEPeripheral(Context context, MessageCallback callback) {
         this.context = context;
         this.callback = callback;
-        setupGattServer();
     }
 
     public void start() {
@@ -72,38 +71,36 @@ public class BLEPeripheral {
             String address = device.getAddress();
             String name = device.getName();
 
-            synchronized (devices) {
-                boolean wasConnected = devices.containsKey(address);
-                if (newState == BluetoothGatt.STATE_CONNECTED) {
-                    if (wasConnected) {
-                        Log.w(TAG, name + " (" + address + ") attempted to connect twice. Rejecting. Thread:"+ Thread.currentThread().getId() );
-                        gattServer.cancelConnection(device);
-                        return;
-                    }
-
-                    devices.put(address, device);
-                    Log.d(TAG, "Central connected: " + name + address+". Now have " + devices.size() + " devices. Thread:"+ Thread.currentThread().getId() );
-                    callback.onDeviceConnected(device);
-
-                   //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
-                    gattServer.connect(device, false);
-                } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                    if (!wasConnected) {
-                        Log.w(TAG, name + address + "was already not connected. Ignoring disconnect."+"thread:"+Thread.currentThread().getId() );
-                        return;
-                    }
-
-                    Log.d(TAG, "Central disconnected: " + name + address+" thread:"+Thread.currentThread().getId() );
-                    callback.onDeviceDisconnected(device);
-                    devices.remove(address);
-
-                    if (!isOn && devices.isEmpty()) {
-                        gattServer.close();
-                        Log.d(TAG, "GATT server closed.");
-                    }
-                } else {
-                    Log.w(TAG, "Unknown state: " + newState);
+            boolean wasConnected = devices.containsKey(address);
+            if (newState == BluetoothGatt.STATE_CONNECTED) {
+                if (wasConnected) {
+                    Log.w(TAG, name + " (" + address + ") attempted to connect twice. Ignoring. Thread:"+ Thread.currentThread().getId() );
+                    gattServer.cancelConnection(device);
+                    return;
                 }
+
+                devices.put(address, device);
+                Log.d(TAG, "Central connected: " + name + address+". Now have " + devices.size() + " devices. Thread:"+ Thread.currentThread().getId() );
+                callback.onDeviceConnected(device);
+
+               //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
+                gattServer.connect(device, false);
+            } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                if (!wasConnected) {
+                    Log.w(TAG, name + address + "was already not connected. Ignoring disconnect."+"thread:"+Thread.currentThread().getId() );
+                    return;
+                }
+
+                Log.d(TAG, "Central disconnected: " + name + address+" thread:"+Thread.currentThread().getId() );
+                callback.onDeviceDisconnected(device);
+                devices.remove(address);
+
+                if (!isOn && devices.isEmpty()) {
+                    gattServer.close();
+                    Log.d(TAG, "GATT server closed.");
+                }
+            } else {
+                Log.w(TAG, "Unknown state: " + newState);
             }
         }
 
@@ -137,7 +134,7 @@ public class BLEPeripheral {
 
             if (characteristic.getUuid().equals(MESSAGE_UUID)) {
                 String message = new String(value, StandardCharsets.UTF_8);
-                Log.d(TAG, "Received (string?): " + message);
+                Log.d(TAG, "Received (string?): " + message+" from "+device.getName()+device.getAddress());
                 callback.onMessageReceived(value, device);
 
                 // Required response
