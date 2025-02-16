@@ -28,80 +28,18 @@ fun CentralScreen() {
     }
 
     // 1. Create callback FIRST
-    val connectionCallback = remember {
-        object : BLECentral.ConnectionCallback {
-            @SuppressLint("MissingPermission")
-            override fun onDeviceFound(device: BluetoothDevice) {
-                if (!devices.contains(device)) {
-                    devices.add(device)
-//                    Log.d(TAG, "Device found: ${device.name}")
-                }
-
-                Toast.makeText(context, "Found: ${device.name}", Toast.LENGTH_SHORT).show()
-            }
-
-            override fun onMessageReceived(message: String) {
-                Log.d(TAG, "Message recieved: $message")
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Received: $message", Toast.LENGTH_LONG).show()
-                }
-
-                devices.forEach{device->
-                    run {
-                        bleCentral?.send(message.toByteArray(), device.address)
-                    }
-                }
-            }
-
-            override fun onDeviceConnected(device: BluetoothDevice?) {
-                Log.d(TAG, "Device connected: ${device?.name}")
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Connected to ${device?.name}", Toast.LENGTH_SHORT).show()
-                }
-            }
-
-            override fun onDeviceDisconnected(device: BluetoothDevice?) {
-
-                Log.d(TAG, "Device disconnected: ${device?.name}")
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Disconnected to ${device?.name}", Toast.LENGTH_SHORT).show()
-                }
-            }
-
-        }
-    }
+//    val connectionCallback = remember { }
 
 
     Column(modifier = Modifier.padding(16.dp)) {
-        Button(onClick = { bleCentral?.start() }) {
-            Text("Scan Devices")
-        }
-        Button(onClick = { bleCentral?.stop() }) {
-            Text("Stop")
-        }
+
 
         Spacer(modifier = Modifier.height(16.dp))
-        LazyColumn {
-            items(devices) { device ->
-                Row(Modifier.fillMaxWidth().padding(8.dp)) {
-                    Text(
-                        text = "${device.name ?: "Unknown"} (${device.address})",
-                        modifier = Modifier.weight(1f)
-                    )
-                    Button(onClick = {
-                        bleCentral?.retryCount?.clear() // Reset on manual connect
-                        bleCentral?.connectToDevice(device)
-                        Toast.makeText(context, "Connecting...", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Text("Connect")
-                    }
-                }
-            }
-        }
+
     }
 
-    LaunchedEffect(Unit) {
-        bleCentral = BLECentral(context, connectionCallback)
-        bleCentral?.start()
-    }
+//    LaunchedEffect(Unit) {
+//        bleCentral = BLECentral(context, connectionCallback)
+//        bleCentral?.start()
+//    }
 }

@@ -12,9 +12,10 @@ import android.content.Context;
 import android.util.Log;
 
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.List;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class BLEPeripheral {
     public static final String TAG = "my_peripheral";
@@ -23,9 +24,8 @@ public class BLEPeripheral {
     private BluetoothGattCharacteristic messageCharacteristic;
     private final Context context;
     private final MessageCallback callback;
-    private BluetoothManager btManager;
-    private  boolean isOn;
-    private final HashSet<BluetoothDevice> devices = new HashSet<>();
+    private boolean isOn;
+    private final ConcurrentHashMap<String, BluetoothDevice> devices = new ConcurrentHashMap<>();
     private BluetoothLeAdvertiser advertiser;
 
     public BLEPeripheral(Context context, MessageCallback callback) {
@@ -34,61 +34,76 @@ public class BLEPeripheral {
         setupGattServer();
     }
 
-    public void  start(){
-        if (isOn){
+    public void start() {
+        if (isOn) {
             Log.d(TAG, "is already on");
             return;
         }
-        isOn= true;
+        isOn = true;
         setupGattServer();
         startAdvertising();
     }
 
     @SuppressLint("MissingPermission")
-    public void  stop(){
-        if (!isOn){
+    public void stop() {
+        if (!isOn) {
             Log.d(TAG, "is already off");
             return;
         }
         isOn = false;
         advertiser.stopAdvertising(advertisementCallback);
 
-        for (BluetoothDevice device : devices){
+        Collection<BluetoothDevice> deviceList = devices.values();
+        for (BluetoothDevice device : deviceList) {
             gattServer.cancelConnection(device);
         }
 
-        if (devices.isEmpty()){
+        if (devices.isEmpty()) {
             gattServer.close();
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private void disconnect(BluetoothDevice device){
-        Log.d(TAG, "Central disconnected, restarting advertising");
-        callback.onDeviceDisconnected(device.getName() == null ? "unknown" : device.getName());
-        devices.remove(device);
-
-
-        if (!isOn && devices.isEmpty()){
-            gattServer.close();
-        }
-    }
 
     //Order of call backs overrides resembles the "handshake" steps
     private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
         @SuppressLint("MissingPermission")
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
+            String address = device.getAddress();
+            String name = device.getName();
 
-            if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                disconnect(device);
-            } else if(newState == BluetoothGatt.STATE_CONNECTED) {
-                callback.onDeviceConnected(device.getName() == null ? "unknown" : device.getName());
-               devices.add(device);
-               //so that server.cancelConnection works according to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
-                gattServer.connect(device, false);
-            }else{
-                Log.d(TAG, "unknown state"+newState);
+            synchronized (devices) {
+                boolean wasConnected = devices.containsKey(address);
+                if (newState == BluetoothGatt.STATE_CONNECTED) {
+                    if (wasConnected) {
+                        Log.w(TAG, name + " (" + address + ") attempted to connect twice. Rejecting. Thread:"+ Thread.currentThread().getId() );
+                        gattServer.cancelConnection(device);
+                        return;
+                    }
+
+                    devices.put(address, device);
+                    Log.d(TAG, "Central connected: " + name + address+". Now have " + devices.size() + " devices. Thread:"+ Thread.currentThread().getId() );
+                    callback.onDeviceConnected(device);
+
+                   //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
+                    gattServer.connect(device, false);
+                } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                    if (!wasConnected) {
+                        Log.w(TAG, name + address + "was already not connected. Ignoring disconnect."+"thread:"+Thread.currentThread().getId() );
+                        return;
+                    }
+
+                    Log.d(TAG, "Central disconnected: " + name + address+" thread:"+Thread.currentThread().getId() );
+                    callback.onDeviceDisconnected(device);
+                    devices.remove(address);
+
+                    if (!isOn && devices.isEmpty()) {
+                        gattServer.close();
+                        Log.d(TAG, "GATT server closed.");
+                    }
+                } else {
+                    Log.w(TAG, "Unknown state: " + newState);
+                }
             }
         }
 
@@ -122,8 +137,8 @@ public class BLEPeripheral {
 
             if (characteristic.getUuid().equals(MESSAGE_UUID)) {
                 String message = new String(value, StandardCharsets.UTF_8);
-                Log.d(TAG, "Received: " + message);
-                callback.onMessageSent(message);
+                Log.d(TAG, "Received (string?): " + message);
+                callback.onMessageReceived(value, device);
 
                 // Required response
                 if (responseNeeded) {
@@ -141,11 +156,11 @@ public class BLEPeripheral {
     };
 
     public interface MessageCallback {
-        void onMessageSent(String message);
+        void onMessageReceived(byte[] data, BluetoothDevice device);
 
-        void onDeviceConnected(String deviceName);
+        void onDeviceConnected(BluetoothDevice device);
 
-        void onDeviceDisconnected(String deviceName);
+        void onDeviceDisconnected(BluetoothDevice device);
     }
 
     private final AdvertiseCallback advertisementCallback = new AdvertiseCallback() {
@@ -163,10 +178,9 @@ public class BLEPeripheral {
     };
 
 
-
     @SuppressLint("MissingPermission")
     private void setupGattServer() {
-        btManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
+        BluetoothManager btManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
         gattServer = btManager.openGattServer(context, gattServerCallback);
 
         BluetoothGattService service = new BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
@@ -218,15 +232,14 @@ public class BLEPeripheral {
     }
 
     @SuppressLint("MissingPermission")
-    public void sendMessage(String message) {
-        messageCharacteristic.setValue(message);
-        List<BluetoothDevice> connectedDevices = btManager.getConnectedDevices(BluetoothProfile.GATT);
-
-        Log.d(TAG, "Sending message to " + connectedDevices.size() + " devices");
-        for (BluetoothDevice device : connectedDevices) {
-            // Ensure notifications are enabled before sending
-            gattServer.notifyCharacteristicChanged(device, messageCharacteristic, false);
-            Log.d(TAG, "Notified device: " + device.getAddress());
+    public boolean send(byte[] message, String address) {
+        BluetoothDevice device = devices.get(address);
+        if (device == null) {
+            Log.d(TAG, "address doesn't exist");
+            return false;
         }
+
+        messageCharacteristic.setValue(message);
+        return gattServer.notifyCharacteristicChanged(device, messageCharacteristic, false);
     }
 }

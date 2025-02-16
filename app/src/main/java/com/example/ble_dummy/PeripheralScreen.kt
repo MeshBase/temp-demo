@@ -20,48 +20,11 @@ fun PeripheralScreen() {
     var connectionStatus by remember { mutableStateOf("Not connected") }
     val TAG = "my_peripheral screen"
 
-    val blePeripheral = remember {
-        BLEPeripheral(context, object : BLEPeripheral.MessageCallback {
-            override fun onDeviceConnected(deviceName: String) {
-                connectionStatus = "Connected to: $deviceName"
-                Log.d(TAG, "Central connected: $deviceName")
-
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Central Connected: $deviceName", Toast.LENGTH_SHORT)
-                        .show()
-                }
-            }
-
-            override fun onDeviceDisconnected(deviceName: String?) {
-                connectionStatus = "advertising again"
-                Log.d(TAG, "disconnected to: $deviceName")
-
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Central disconnected: $deviceName", Toast.LENGTH_SHORT)
-                        .show()
-                }
-            }
-
-            override fun onMessageSent(message: String) {
-                Log.d(TAG, "Message recieved: $message")
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Message recieved: $message", Toast.LENGTH_SHORT).show()
-                }
-            }
-        })
-    }
 
     Column(modifier = Modifier.padding(16.dp)) {
         // Status Display
         Text("Status: $connectionStatus", style = MaterialTheme.typography.bodyLarge)
 
-        Button(onClick = { blePeripheral.start() }) {
-            Text("Start")
-        }
-
-        Button(onClick = { blePeripheral.stop() }) {
-            Text("Stope")
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -80,7 +43,7 @@ fun PeripheralScreen() {
         Button(
             onClick = {
                 if (message.isNotEmpty()) {
-                    blePeripheral.sendMessage(message)
+//                    blePeripheral.send("cde".toByteArray(), )
                     message = ""
                 }
             },
@@ -91,7 +54,7 @@ fun PeripheralScreen() {
     }
 
     LaunchedEffect(Unit) {
-        blePeripheral.start()
+//        blePeripheral.start()
         connectionStatus = "Advertising..."
     }
 }
