@@ -25,7 +25,7 @@ public class BLEPeripheral {
     private final Context context;
     private final MessageCallback callback;
     private boolean isOn;
-    private final ConcurrentHashMap<String, BluetoothDevice> devices = new ConcurrentHashMap<>();
+    private final HashMap<String, BluetoothDevice> devices = new HashMap<>();
     private BluetoothLeAdvertiser advertiser;
 
     public BLEPeripheral(Context context, MessageCallback callback) {
@@ -71,27 +71,28 @@ public class BLEPeripheral {
             String address = device.getAddress();
             String name = device.getName();
 
+
             boolean wasConnected = devices.containsKey(address);
             if (newState == BluetoothGatt.STATE_CONNECTED) {
                 if (wasConnected) {
-                    Log.w(TAG, name + " (" + address + ") attempted to connect twice. Ignoring. Thread:"+ Thread.currentThread().getId() );
+                    Log.w(TAG, name + " (" + address + ") attempted to connect twice. Ignoring. Thread:");
                     gattServer.cancelConnection(device);
                     return;
                 }
 
                 devices.put(address, device);
-                Log.d(TAG, "Central connected: " + name + address+". Now have " + devices.size() + " devices. Thread:"+ Thread.currentThread().getId() );
+                Log.d(TAG, "Central connected: " + name + address+". Now have " + devices.size() + " devices. status:"+ status );
                 callback.onDeviceConnected(device);
 
                //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
                 gattServer.connect(device, false);
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 if (!wasConnected) {
-                    Log.w(TAG, name + address + "was already not connected. Ignoring disconnect."+"thread:"+Thread.currentThread().getId() );
+                    Log.w(TAG, name + address + " was already not connected. Ignoring disconnect.");
                     return;
                 }
 
-                Log.d(TAG, "Central disconnected: " + name + address+" thread:"+Thread.currentThread().getId() );
+                Log.d(TAG, "Central disconnected: " + name + address+" status:"+status );
                 callback.onDeviceDisconnected(device);
                 devices.remove(address);
 
@@ -100,7 +101,7 @@ public class BLEPeripheral {
                     Log.d(TAG, "GATT server closed.");
                 }
             } else {
-                Log.w(TAG, "Unknown state: " + newState);
+                Log.w(TAG, "Unknown state: " + newState + " status: "+status);
             }
         }
 

@@ -148,7 +148,11 @@ class MainActivity : ComponentActivity() {
 
         @SuppressLint("MissingPermission")
         override fun onDeviceConnected(device: BluetoothDevice) {
-            peripheralsDevices.add(device)
+            if (centralsDevices.contains(device)){
+                Log.w(TAG, "already connected via central is being detected");
+            }else{
+                peripheralsDevices.add(device)
+            }
         }
 
         @SuppressLint("MissingPermission")
@@ -179,13 +183,17 @@ class MainActivity : ComponentActivity() {
 
         this.perm = BLEPermissions(this, object : BLEPermissionListener {
             override fun onEnabled() {
-                Toast.makeText(that, "BLE enabled", Toast.LENGTH_SHORT).show();
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(that, "BLE enabled", Toast.LENGTH_SHORT).show();
+                }
 //                bleCentral?.start();
 //                blePeripheral?.start();
             }
 
             override fun onDisabled() {
-                Toast.makeText(that, "BLE disabled", Toast.LENGTH_SHORT).show()
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(that, "BLE disabled", Toast.LENGTH_SHORT).show()
+                }
                 bleCentral?.stop();
                 blePeripheral?.start();
             }
