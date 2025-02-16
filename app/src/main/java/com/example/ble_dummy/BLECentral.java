@@ -60,7 +60,6 @@ public class BLECentral {
 
         void onDeviceDisconnected(BluetoothDevice device);
 
-        void onMessageForwarded(String message);
     }
 
     public final Map<String, Integer> retryCount = new HashMap<>();
@@ -119,17 +118,20 @@ public class BLECentral {
     }
 
     @SuppressLint("MissingPermission")
-    public void sendMessageToAllDevices(String message) {
-        for (BluetoothGatt gatt : connectedDevices.values()) {
-            BluetoothGattCharacteristic messageCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.MESSAGE_UUID); // Use CHAR_UUID
-
-            messageCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-            messageCharacteristic.setValue(message.getBytes(StandardCharsets.UTF_8));
-            boolean success = gatt.writeCharacteristic(messageCharacteristic);
-            Log.v(TAG, "Write status: " + success + " to " + gatt.getDevice().getName() + " with address " + gatt.getDevice().getAddress());
+    public boolean send(byte[] data, String address) {
+        BluetoothGatt gatt = connectedDevices.get(address);
+        if (gatt == null) {
+            Log.d(TAG, "address does not exist");
+            return false;
         }
 
-        callback.onMessageForwarded(message + " to " + connectedDevices.size() + " devices");
+        BluetoothGattCharacteristic messageCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.MESSAGE_UUID); // Use CHAR_UUID
+        messageCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        //message.getBytes(StandardCharsets.UTF_8)
+        messageCharacteristic.setValue(data);
+        boolean success = gatt.writeCharacteristic(messageCharacteristic);
+        Log.v(TAG, "Write status: " + success + " to " + gatt.getDevice().getName() + " with address " + gatt.getDevice().getAddress());
+        return success;
     }
 
     @SuppressLint("MissingPermission")
@@ -292,7 +294,6 @@ public class BLECentral {
             String message = new String(characteristic.getValue());
             Log.d(TAG, "received message from"+gatt.getDevice().getName()+gatt.getDevice().getAddress());
             callback.onMessageReceived(message);
-            sendMessageToAllDevices(message);
         }
        };
 }

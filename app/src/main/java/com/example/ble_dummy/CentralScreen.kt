@@ -23,6 +23,9 @@ fun CentralScreen() {
     val context = LocalContext.current
     var devices = remember { mutableStateListOf<BluetoothDevice>() }
     val TAG = "my_central screen"
+    var bleCentral:BLECentral? = remember {
+        null
+    }
 
     // 1. Create callback FIRST
     val connectionCallback = remember {
@@ -42,6 +45,12 @@ fun CentralScreen() {
                 Handler(Looper.getMainLooper()).post {
                     Toast.makeText(context, "Received: $message", Toast.LENGTH_LONG).show()
                 }
+
+                devices.forEach{device->
+                    run {
+                        bleCentral?.send(message.toByteArray(), device.address)
+                    }
+                }
             }
 
             override fun onDeviceConnected(device: BluetoothDevice?) {
@@ -59,24 +68,15 @@ fun CentralScreen() {
                 }
             }
 
-            override fun onMessageForwarded(message: String) {
-                Log.d(TAG, "Forwarded: ${message}")
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Forwarded: $message", Toast.LENGTH_SHORT).show()
-                }
-            }
         }
     }
 
-    val bleCentral = remember {
-        BLECentral(context, connectionCallback)
-    }
 
     Column(modifier = Modifier.padding(16.dp)) {
-        Button(onClick = { bleCentral.start() }) {
+        Button(onClick = { bleCentral?.start() }) {
             Text("Scan Devices")
         }
-        Button(onClick = { bleCentral.stop() }) {
+        Button(onClick = { bleCentral?.stop() }) {
             Text("Stop")
         }
 
@@ -89,8 +89,8 @@ fun CentralScreen() {
                         modifier = Modifier.weight(1f)
                     )
                     Button(onClick = {
-                        bleCentral.retryCount.clear() // Reset on manual connect
-                        bleCentral.connectToDevice(device)
+                        bleCentral?.retryCount?.clear() // Reset on manual connect
+                        bleCentral?.connectToDevice(device)
                         Toast.makeText(context, "Connecting...", Toast.LENGTH_SHORT).show()
                     }) {
                         Text("Connect")
@@ -101,6 +101,7 @@ fun CentralScreen() {
     }
 
     LaunchedEffect(Unit) {
-        bleCentral.start()
+        bleCentral = BLECentral(context, connectionCallback)
+        bleCentral?.start()
     }
 }
