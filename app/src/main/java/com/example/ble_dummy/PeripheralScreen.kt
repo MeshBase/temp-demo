@@ -55,6 +55,14 @@ fun PeripheralScreen() {
         // Status Display
         Text("Status: $connectionStatus", style = MaterialTheme.typography.bodyLarge)
 
+        Button(onClick = { blePeripheral.start() }) {
+            Text("Start")
+        }
+
+        Button(onClick = { blePeripheral.stop() }) {
+            Text("Stope")
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         // Message Input
@@ -83,7 +91,7 @@ fun PeripheralScreen() {
     }
 
     LaunchedEffect(Unit) {
-        blePeripheral.startAdvertising()
+        blePeripheral.start()
         connectionStatus = "Advertising..."
     }
 }

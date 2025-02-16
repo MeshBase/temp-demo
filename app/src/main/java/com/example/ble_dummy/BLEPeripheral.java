@@ -12,6 +12,7 @@ import android.content.Context;
 import android.util.Log;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,22 +21,74 @@ public class BLEPeripheral {
 
     private BluetoothGattServer gattServer;
     private BluetoothGattCharacteristic messageCharacteristic;
-    private Context context;
-    private MessageCallback callback;
+    private final Context context;
+    private final MessageCallback callback;
     private BluetoothManager btManager;
+    private  boolean isOn;
+    private final HashSet<BluetoothDevice> devices = new HashSet<>();
+    private BluetoothLeAdvertiser advertiser;
+
+    public BLEPeripheral(Context context, MessageCallback callback) {
+        this.context = context;
+        this.callback = callback;
+        setupGattServer();
+    }
+
+    public void  start(){
+        if (isOn){
+            Log.d(TAG, "is already on");
+            return;
+        }
+        isOn= true;
+        setupGattServer();
+        startAdvertising();
+    }
+
+    @SuppressLint("MissingPermission")
+    public void  stop(){
+        if (!isOn){
+            Log.d(TAG, "is already off");
+            return;
+        }
+        isOn = false;
+        advertiser.stopAdvertising(advertisementCallback);
+
+        for (BluetoothDevice device : devices){
+            gattServer.cancelConnection(device);
+        }
+
+        if (devices.isEmpty()){
+            gattServer.close();
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void disconnect(BluetoothDevice device){
+        Log.d(TAG, "Central disconnected, restarting advertising");
+        callback.onDeviceDisconnected(device.getName() == null ? "unknown" : device.getName());
+        devices.remove(device);
+
+
+        if (!isOn && devices.isEmpty()){
+            gattServer.close();
+        }
+    }
 
     //Order of call backs overrides resembles the "handshake" steps
     private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
-
         @SuppressLint("MissingPermission")
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
-            if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                Log.d(TAG, "Central disconnected, restarting advertising");
 
-                callback.onDeviceDisconnected(device.getName() == null ? "unknown" : device.getName());
-            } else {
+            if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                disconnect(device);
+            } else if(newState == BluetoothGatt.STATE_CONNECTED) {
                 callback.onDeviceConnected(device.getName() == null ? "unknown" : device.getName());
+               devices.add(device);
+               //so that server.cancelConnection works according to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
+                gattServer.connect(device, false);
+            }else{
+                Log.d(TAG, "unknown state"+newState);
             }
         }
 
@@ -95,7 +148,7 @@ public class BLEPeripheral {
         void onDeviceDisconnected(String deviceName);
     }
 
-    private AdvertiseCallback advertisementCallback = new AdvertiseCallback() {
+    private final AdvertiseCallback advertisementCallback = new AdvertiseCallback() {
         @Override
         public void onStartSuccess(AdvertiseSettings settingsInEffect) {
             super.onStartSuccess(settingsInEffect);
@@ -109,11 +162,6 @@ public class BLEPeripheral {
         }
     };
 
-    public BLEPeripheral(Context context, MessageCallback callback) {
-        this.context = context;
-        this.callback = callback;
-        setupGattServer();
-    }
 
 
     @SuppressLint("MissingPermission")
@@ -144,12 +192,13 @@ public class BLEPeripheral {
 
         service.addCharacteristic(messageCharacteristic);
         service.addCharacteristic(idCharacteristic);
+        assert gattServer != null;
         gattServer.addService(service);
     }
 
 
     @SuppressLint("MissingPermission")
-    public void startAdvertising() {
+    private void startAdvertising() {
         Log.d(TAG, "Starting advertising");
 
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
@@ -163,8 +212,8 @@ public class BLEPeripheral {
                 .addServiceUuid(new android.os.ParcelUuid(SERVICE_UUID))
                 .build();
 
-        BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser()
-                .startAdvertising(settings, data, advertisementCallback);
+        advertiser = BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser();
+        advertiser.startAdvertising(settings, data, advertisementCallback);
 
     }
 

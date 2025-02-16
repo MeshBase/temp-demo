@@ -99,4 +99,8 @@ fun CentralScreen() {
             }
         }
     }
+
+    LaunchedEffect(Unit) {
+        bleCentral.start()
+    }
 }
