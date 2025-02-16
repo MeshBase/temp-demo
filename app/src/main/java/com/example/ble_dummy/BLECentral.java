@@ -102,10 +102,11 @@ public class BLECentral {
         if (alreadyConnected) return; //to not flood the logs
 
         if (!isOn || tooManyRetries || alreadyConnecting) {
-            Log.d(TAG, "dropping connecting to" + device.getName() + "due to" + "too many retries:" + tooManyRetries + " already connecting:" + alreadyConnecting + " ison"+isOn);
+            Log.d(TAG, "dropping connecting to" + device.getName() + "due to" + "too many retries:" + tooManyRetries + " already connecting:" + alreadyConnecting + " isOff"+!isOn);
             return;
         }
 
+        Log.d(TAG, "trying to connect to"+device.getName()+device.getAddress());
         long delay = count * 150L; //0 wait time for first try
         connectingDevices.add(address); //
         retryCount.put(address, count + 1);
@@ -193,10 +194,7 @@ public class BLECentral {
                 }
 
                 if (isOn){
-                    callback.onDeviceConnected(gatt.getDevice());
-                    Log.d(TAG, "Connected to: " + name+address);
-                    connectingDevices.remove(address);
-                    connectedDevices.put(address, gatt);
+                    Log.d(TAG, "Connected (not fully though) to: " + name+address);
                     gatt.discoverServices();
                     retryCount.remove(address);
                 }else{
@@ -211,6 +209,7 @@ public class BLECentral {
 
             if (status != BluetoothGatt.GATT_SUCCESS){
                 Log.d(TAG, "Services discovery failed for"+gatt.getDevice().getName());
+                gatt.disconnect();
                 return;
             }
             Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
@@ -228,6 +227,7 @@ public class BLECentral {
             }catch (Exception e){
                 //see if any null errors
                 Log.e(TAG, "error on discover services"+e);
+                gatt.disconnect();
                 throw  e;
             }
         }
@@ -236,6 +236,7 @@ public class BLECentral {
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.d(TAG, "Notifications failed to be enabled!");
+                gatt.disconnect();
                 return;
             }
             if (descriptor.getUuid().equals(CommonConstants.NOTIF_DESCRIPTOR_UUID)){
@@ -246,6 +247,7 @@ public class BLECentral {
                 boolean success = gatt.readCharacteristic(idCharacteristic);
                 if (!success){
                     Log.d(TAG, "Failed to read characteristic"+idCharacteristic.getUuid()+" from "+gatt.getDevice().getName());
+                    gatt.disconnect();
                 }
             }
         }
@@ -255,19 +257,27 @@ public class BLECentral {
             super.onCharacteristicRead(gatt, characteristic, status);
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.d(TAG, "Failed to read characteristic from "+gatt.getDevice().getName());
+                gatt.disconnect();
                 return;
             }
             Log.d(TAG, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+ Arrays.toString(characteristic.getValue()));
 
             if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
-                Log.d(TAG, "id requested");
+                Log.d(TAG, "id recieved");
                 UUID uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
-                Log.d(TAG, "Device UUID! of " + gatt.getDevice().getName() + " is : " + uuid);
+                Log.d(TAG, "Device UUID of " + gatt.getDevice().getName() + " is : " + uuid + "now fully connected!");
 
+                //Fully connected
+                callback.onDeviceConnected(gatt.getDevice());
+                connectingDevices.remove(gatt.getDevice().getAddress());
+                connectedDevices.put(gatt.getDevice().getAddress(), gatt);
+
+                //send my id
                 UUID myId = UUID.randomUUID();
                 characteristic.setValue(ConvertUUID.uuidToBytes(myId));
                 characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
                 gatt.writeCharacteristic(characteristic);
+
             }
         }
 
