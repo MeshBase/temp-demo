@@ -90,12 +90,7 @@ public class BLECentral {
 
 
     @SuppressLint("MissingPermission")
-    public void connectToDevice(BluetoothDevice device) {
-        attemptConnect(device);
-    }
-
-    @SuppressLint("MissingPermission")
-    private void attemptConnect(BluetoothDevice device) {
+    private void tryConnecting(BluetoothDevice device) {
         String address = device.getAddress();
         int count = retryCount.getOrDefault(address, 0);
 
@@ -104,8 +99,10 @@ public class BLECentral {
         boolean alreadyConnecting = connectingDevices.contains(address);
         boolean alreadyConnected = connectedDevices.containsKey(address);
 
-        if (!isOn || tooManyRetries || alreadyConnecting || alreadyConnected) {
-            Log.d(TAG, "dropping connecting to" + device.getName() + "due to" + "too many retries:" + tooManyRetries + " already connecting:" + alreadyConnecting + " already connected:" + alreadyConnected);
+        if (alreadyConnected) return; //to not flood the logs
+
+        if (!isOn || tooManyRetries || alreadyConnecting) {
+            Log.d(TAG, "dropping connecting to" + device.getName() + "due to" + "too many retries:" + tooManyRetries + " already connecting:" + alreadyConnecting + " ison"+isOn);
             return;
         }
 
@@ -163,18 +160,7 @@ public class BLECentral {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
-            String address = device.getAddress();
-
-            boolean tooManyRetries = retryCount.getOrDefault(address, 0) >= MAX_RETRIES;
-            boolean alreadyConnecting = connectingDevices.contains(address);
-            boolean alreadyConnected = connectedDevices.containsKey(address);
-
-            if (!isOn || tooManyRetries || alreadyConnecting || alreadyConnected) {
-                return;
-            }
-
-            Log.d(TAG, "Found device: " + device.getName() + " with address: " + device.getAddress());
-            connectToDevice(device);
+            tryConnecting(device);
         }
     };
 
@@ -197,9 +183,7 @@ public class BLECentral {
                 connectingDevices.remove(address);
                 connectedDevices.remove(address);
 
-                if (isOn){
-                    attemptConnect(gatt.getDevice());
-                }else{
+                if (!isOn){
                     gatt.close();
                 }
 
