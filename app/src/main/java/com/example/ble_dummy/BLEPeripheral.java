@@ -9,13 +9,15 @@ import android.annotation.SuppressLint;
 import android.bluetooth.*;
 import android.bluetooth.le.*;
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class BLEPeripheral {
     public static final String TAG = "my_peripheral";
@@ -25,7 +27,8 @@ public class BLEPeripheral {
     private final Context context;
     private final MessageCallback callback;
     private boolean isOn;
-    private final HashMap<String, BluetoothDevice> devices = new HashMap<>();
+    private final HashMap<String, BluetoothDevice> connectedDevices = new HashMap<>();
+    private final HashMap<String, BluetoothDevice> connectingDevices = new HashMap<>();
     private BluetoothLeAdvertiser advertiser;
 
     public BLEPeripheral(Context context, MessageCallback callback) {
@@ -39,7 +42,9 @@ public class BLEPeripheral {
             return;
         }
         isOn = true;
-        setupGattServer();
+        if (gattServer == null){
+            setupGattServer();
+        }
         startAdvertising();
     }
 
@@ -52,14 +57,32 @@ public class BLEPeripheral {
         isOn = false;
         advertiser.stopAdvertising(advertisementCallback);
 
-        Collection<BluetoothDevice> deviceList = devices.values();
-        for (BluetoothDevice device : deviceList) {
+        for (BluetoothDevice device : new HashSet<>(connectedDevices.values())) {
             gattServer.cancelConnection(device);
         }
 
-        if (devices.isEmpty()) {
-            gattServer.close();
+        for (BluetoothDevice device: new HashSet<>(connectingDevices.values())){
+            gattServer.cancelConnection(device);
         }
+
+        if (connectedDevices.isEmpty()) {
+            closeGatt();
+        }else{
+            //Some devices refuse to disconnect, so force disconnection after some time
+            new Handler(Looper.getMainLooper()).postDelayed(()->{
+                if (!isOn && gattServer != null){
+                    Log.d(TAG, "closed gatt server after 5 seconds with "+connectedDevices.size() + "connected devices and "+connectingDevices.size()+ "connecting devices");
+                    closeGatt();
+                }
+
+            }, 5_000L);
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void closeGatt(){
+        gattServer.close();
+        gattServer = null;
     }
 
 
@@ -72,33 +95,33 @@ public class BLEPeripheral {
             String name = device.getName();
 
 
-            boolean wasConnected = devices.containsKey(address);
+            boolean exists = connectedDevices.containsKey(address) || connectingDevices.containsKey(address);
             if (newState == BluetoothGatt.STATE_CONNECTED) {
-                if (wasConnected) {
-                    Log.w(TAG, name + " (" + address + ") attempted to connect twice. Ignoring. Thread:");
+                if (exists) {
+                    Log.w(TAG, name + " (" + address + ") attempted to connect twice. Ignoring");
                     gattServer.cancelConnection(device);
                     return;
                 }
 
-                devices.put(address, device);
-                Log.d(TAG, "Central connected: " + name + address+". Now have " + devices.size() + " devices. status:"+ status );
-                callback.onDeviceConnected(device);
-
-               //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
+                connectingDevices.put(device.getAddress(), device);
+                Log.d(TAG, "Central connected (not fully though): " + name + address+". Now have " + connectingDevices.size() + "connecting devices. status:"+ status );
+                //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
                 gattServer.connect(device, false);
+
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                if (!wasConnected) {
+                if (!exists) {
                     Log.w(TAG, name + address + " was already not connected. Ignoring disconnect.");
                     return;
                 }
 
                 Log.d(TAG, "Central disconnected: " + name + address+" status:"+status );
                 callback.onDeviceDisconnected(device);
-                devices.remove(address);
+                connectedDevices.remove(address);
+                connectingDevices.remove(address);
 
-                if (!isOn && devices.isEmpty()) {
-                    gattServer.close();
-                    Log.d(TAG, "GATT server closed.");
+                if (!isOn && connectedDevices.isEmpty()) {
+                    closeGatt();
+                    Log.d(TAG, "GATT server closed after all devices were disconnected");
                 }
             } else {
                 Log.w(TAG, "Unknown state: " + newState + " status: "+status);
@@ -108,11 +131,14 @@ public class BLEPeripheral {
         @SuppressLint("MissingPermission")
         @Override
         public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
-            Log.d(TAG, "descriptor write request received");
+            Log.d(TAG, "descriptor write request received"+"response needed:"+responseNeeded+" descriptor:"+descriptor.getUuid());
             if (descriptor.getUuid().equals(CommonConstants.NOTIF_DESCRIPTOR_UUID)) {
                 if (responseNeeded) {
-                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
+                    boolean res = gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
+                    Log.d(TAG, "descriptor response sent"+res);
                 }
+            }else{
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, value);
             }
         }
 
@@ -126,6 +152,8 @@ public class BLEPeripheral {
             if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
                 UUID deviceUUID = UUID.randomUUID();
                 gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(deviceUUID));
+            }else{
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, new byte[] {0,1,2});
             }
         }
 
@@ -138,16 +166,26 @@ public class BLEPeripheral {
                 Log.d(TAG, "Received (string?): " + message+" from "+device.getName()+device.getAddress());
                 callback.onMessageReceived(value, device);
 
-                // Required response
                 if (responseNeeded) {
                     gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
                 }
             } else if (characteristic.getUuid().equals(CommonConstants.ID_UUID)) {
                 Log.d(TAG, "id has been given");
                 UUID deviceUUID = ConvertUUID.bytesToUUID(value);
-                Log.d(TAG, "Device UUID! of " + device.getName() + " is : " + deviceUUID);
-                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
+                Log.d(TAG, "Device UUID! of " + device.getName() + " is : " + deviceUUID+" now fully connected."+connectedDevices.size()+" connected devices");
+
+                //Fully connected
+                connectedDevices.put(device.getAddress(), device);
+                connectingDevices.remove(device.getAddress());
+                callback.onDeviceConnected(device);
+
+                if (responseNeeded) {
+                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
+                }
+            }else if (responseNeeded){
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
             }
+
         }
 
 
@@ -231,7 +269,7 @@ public class BLEPeripheral {
 
     @SuppressLint("MissingPermission")
     public boolean send(byte[] message, String address) {
-        BluetoothDevice device = devices.get(address);
+        BluetoothDevice device = connectedDevices.get(address);
         if (device == null) {
             Log.d(TAG, "address doesn't exist");
             return false;

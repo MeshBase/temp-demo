@@ -7,6 +7,8 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.*;
 
@@ -15,7 +17,7 @@ import kotlin.text.Charsets;
 class CommonConstants {
     public static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
     public static final UUID MESSAGE_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
-    public static final UUID ID_UUID = UUID.fromString("0000beef-0000-1000-8000-10005f9b34fb");
+    public static final UUID ID_UUID = UUID.fromString("b000000f-0000-1000-8000-00805f9b34fb");
     public  static  final  UUID NOTIF_DESCRIPTOR_UUID = UUID.fromString("00002901-0000-1000-8000-00805f9b34fb" );
 }
 
@@ -155,6 +157,16 @@ public class BLECentral {
             }
         }, 10_000);
     }
+    private void refreshDeviceCache(BluetoothGatt gatt) {
+        try {
+            Method refreshMethod = gatt.getClass().getMethod("refresh");
+            boolean success =  (boolean) refreshMethod.invoke(gatt);
+            Log.d(TAG, "successfully refreshed gatt info?"+success);
+        } catch (Exception e) {
+            Log.d(TAG, "Could not invoke refresh() to invalidate BLE related cache", e);
+        }
+    }
+
 
     private final ScanCallback scanCallback = new ScanCallback() {
         @SuppressLint("MissingPermission")
@@ -184,6 +196,7 @@ public class BLECentral {
                 connectingDevices.remove(address);
                 connectedDevices.remove(address);
 
+                refreshDeviceCache(gatt);
                 if (!isOn){
                     gatt.close();
                 }
@@ -196,7 +209,6 @@ public class BLECentral {
                 if (isOn){
                     Log.d(TAG, "Connected (not fully though) to: " + name+address);
                     gatt.discoverServices();
-                    retryCount.remove(address);
                 }else{
                     Log.d(TAG, "rejecting new connection after being turned off: "+name+address);
                     gatt.disconnect();
@@ -220,6 +232,10 @@ public class BLECentral {
                 //enable notification
                 BluetoothGattCharacteristic messageCharacteristic = service.getCharacteristic(CommonConstants.MESSAGE_UUID);
                 gatt.setCharacteristicNotification(messageCharacteristic, true);
+
+                BluetoothGattCharacteristic idCharacteristic = service.getCharacteristic(CommonConstants.ID_UUID);
+                Log.d(TAG, "id characteristic exists"+ (idCharacteristic!=null));
+
                 BluetoothGattDescriptor descriptor = messageCharacteristic.getDescriptor( CommonConstants.NOTIF_DESCRIPTOR_UUID);
                 descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                 gatt.writeDescriptor(descriptor);
@@ -243,11 +259,17 @@ public class BLECentral {
                 Log.d(TAG, "Notifications enabled for"+ gatt.getDevice().getName()+gatt.getDevice().getAddress());
 
                 //then get device uuid
-                BluetoothGattCharacteristic idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.ID_UUID);
-                boolean success = gatt.readCharacteristic(idCharacteristic);
-                if (!success){
-                    Log.d(TAG, "Failed to read characteristic"+idCharacteristic.getUuid()+" from "+gatt.getDevice().getName());
+                try{
+                    BluetoothGattCharacteristic idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.ID_UUID);
+                    boolean success = gatt.readCharacteristic(idCharacteristic);
+                    if (!success){
+                        Log.d(TAG, "Failed to read characteristic"+idCharacteristic.getUuid()+" from "+gatt.getDevice().getName());
+                        gatt.disconnect();
+                    }
+                }catch (Exception e){
+                    Log.e(TAG, "error while trying to read id char"+e);
                     gatt.disconnect();
+                    throw  e;
                 }
             }
         }
@@ -271,6 +293,7 @@ public class BLECentral {
                 callback.onDeviceConnected(gatt.getDevice());
                 connectingDevices.remove(gatt.getDevice().getAddress());
                 connectedDevices.put(gatt.getDevice().getAddress(), gatt);
+                retryCount.remove(gatt.getDevice().getAddress());
 
                 //send my id
                 UUID myId = UUID.randomUUID();
