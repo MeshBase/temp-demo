@@ -14,12 +14,6 @@ import java.util.*;
 
 import kotlin.text.Charsets;
 
-class CommonConstants {
-    public static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
-    public static final UUID MESSAGE_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
-    public static final UUID ID_UUID = UUID.fromString("b000000f-0000-1000-8000-00805f9b34fb");
-    public  static  final  UUID NOTIF_DESCRIPTOR_UUID = UUID.fromString("00002901-0000-1000-8000-00805f9b34fb" );
-}
 
 class ConvertUUID {
     public static byte[] uuidToBytes(UUID uuid) {
