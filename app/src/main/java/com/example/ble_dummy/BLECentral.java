@@ -306,4 +306,5 @@ public class BLECentral {
             callback.onDataReceived(characteristic.getValue());
         }
        };
+
 }

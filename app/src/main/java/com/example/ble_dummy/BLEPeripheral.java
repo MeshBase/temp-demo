@@ -88,6 +88,7 @@ public class BLEPeripheral {
 
     //Order of call backs overrides resembles the "handshake" steps
     private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
+
         @SuppressLint("MissingPermission")
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {

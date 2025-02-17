@@ -3,15 +3,20 @@ package com.example.ble_dummy;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCharacteristic;
+
 import java.util.Arrays;
 
 public abstract class BLETask {
-    public long expireMilli = 1000L;
+    public long expireMilli = 3_000L;
+    public boolean expires = true;
     public abstract String asString();
 }
 
 class Scan extends BLETask {
+    //TODO: update logic to handle multiple devicesBeforeConnect
     int devicesBeforeConnect = 1;
+    boolean expires = false;
 
     @Override
     public String asString() {
@@ -20,7 +25,11 @@ class Scan extends BLETask {
     }
 }
 
-class ConnectToPeripheral extends BLETask {
+abstract class CentralTask extends BLETask {
+
+}
+
+class ConnectToPeripheral extends CentralTask {
     BluetoothDevice device;
 
     ConnectToPeripheral(BluetoothDevice device) {
@@ -33,7 +42,7 @@ class ConnectToPeripheral extends BLETask {
         return "ConnectToPeripheral: device = " + deviceName + " (" + device.getAddress() + "), retriesLeft = " + ", expireMilli = " + expireMilli; }
 }
 
-class DiscoverServices extends BLETask {
+class DiscoverServices extends CentralTask {
     BluetoothGatt gatt;
 
     DiscoverServices(BluetoothGatt gatt) {
@@ -49,14 +58,29 @@ class DiscoverServices extends BLETask {
     }
 }
 
-class WriteCharacteristic extends BLETask {
+class ReadCharacteristic extends CentralTask{
+    BluetoothGattCharacteristic characteristic;
+    BluetoothGatt gatt;
+    ReadCharacteristic(BluetoothGattCharacteristic characteristic, BluetoothGatt gatt){
+        this.characteristic = characteristic;
+        this.gatt = gatt;
+    }
+
+    @Override
+    public String asString() {
+        return "read characteristic - "+characteristic.getUuid();
+    }
+}
+class WriteCharacteristic extends CentralTask {
     BluetoothGatt gatt;
     byte[] data;
     int remainingRetries;
+    BluetoothGattCharacteristic characteristic;
 
-    WriteCharacteristic(BluetoothGatt gatt, byte[] data, int remainingRetries) {
+    WriteCharacteristic(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] data, int remainingRetries) {
         this.gatt = gatt;
         this.data = data;
+        this.characteristic = characteristic;
         this.remainingRetries = remainingRetries;
     }
 
@@ -71,11 +95,17 @@ class WriteCharacteristic extends BLETask {
     }
 }
 
-class DisconnectPeripheral extends BLETask {
+class DisconnectPeripheral extends CentralTask {
     BluetoothGatt gatt;
+    boolean forgetRetries ;
 
     DisconnectPeripheral(BluetoothGatt gatt) {
         this.gatt = gatt;
+        this.forgetRetries = false;
+    }
+    DisconnectPeripheral(BluetoothGatt gatt,  boolean forgetRetries) {
+        this.gatt = gatt;
+        this.forgetRetries = forgetRetries;
     }
 
     @Override
@@ -87,7 +117,12 @@ class DisconnectPeripheral extends BLETask {
     }
 }
 
-class StartGattServer extends BLETask {
+
+
+abstract class PeripheralTask extends BLETask {
+
+}
+class StartGattServer extends PeripheralTask {
 
     @Override
     public String asString() {
@@ -95,7 +130,7 @@ class StartGattServer extends BLETask {
     }
 }
 
-class Advertise extends BLETask {
+class Advertise extends PeripheralTask {
 
     @Override
     public String asString() {
@@ -103,7 +138,7 @@ class Advertise extends BLETask {
     }
 }
 
-class ConnectCentral extends BLETask {
+class ConnectCentral extends PeripheralTask {
     BluetoothDevice device;
 
     ConnectCentral(BluetoothDevice device) {
@@ -118,14 +153,14 @@ class ConnectCentral extends BLETask {
     }
 }
 
-class SendWriteResponse extends BLETask {
+class SendResponse extends PeripheralTask {
     BluetoothDevice device;
     int requestId;
     int newState;
     int offset;
     byte[] data;
 
-    SendWriteResponse(BluetoothDevice device, int requestId, int newState, int offset, byte[] data) {
+    SendResponse(BluetoothDevice device, int requestId, int newState, int offset, byte[] data) {
         this.device = device;
         this.requestId = requestId;
         this.newState = newState;
@@ -144,7 +179,7 @@ class SendWriteResponse extends BLETask {
     }
 }
 
-class DisconnectCentral extends BLETask {
+class DisconnectCentral extends PeripheralTask {
     BluetoothDevice device;
 
     DisconnectCentral(BluetoothDevice device) {
@@ -159,7 +194,7 @@ class DisconnectCentral extends BLETask {
     }
 }
 
-class CloseGatt extends BLETask {
+class CloseGatt extends PeripheralTask {
 
     @Override
     public String asString() {
