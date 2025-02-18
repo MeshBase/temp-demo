@@ -36,9 +36,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -71,6 +69,9 @@ public class BLEHandler extends ConnectionHandler {
     private  boolean isScanning = false;
     public final Map<String, Integer> peripheralRetryCount = new HashMap<>();
     private static final int MAX_PERIPHERAL_RETRIES = 5;
+    private static final long SCAN_TIME_GAP = 6_500; //6.5 seconds
+    private static final long MAX_SCAN_DURATION = 3_000;//3 seoncs
+    private long lastScanTime = 0;
 
     /////peripheral fields
     static final String PRFL = "peripheral:";
@@ -92,10 +93,11 @@ public class BLEHandler extends ConnectionHandler {
         synchronized (queue){
             queue.add(task);
 
-            String extraTag = CTRL;
+            String extraTag = "--";
             if (task instanceof PeripheralTask) extraTag = PRFL;
+            else if (task instanceof CentralTask) extraTag = CTRL;
 
-            Log.d(TAG+extraTag,"added task "+task.asString()+" .To a queue of len"+queue.size());
+            Log.d(TAG+extraTag,"added task "+task.asString()+" .To a queue of length:"+queue.size());
             if (pendingTask == null){
                 startNextTask();
             }
@@ -110,14 +112,11 @@ public class BLEHandler extends ConnectionHandler {
             }
 
             pendingTask = queue.poll();
-            if (pendingTask == null){
-                Log.w(TAG, "queue is empty, nothing to do");
-                return;
-            }
-
 
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
-            if (pendingTask instanceof Scan){
+            if (pendingTask == null){
+                startScanWhenEmptyQueue();
+            }else if (pendingTask instanceof Scan){
                 startScan((Scan) pendingTask);
             }else if (pendingTask instanceof ConnectToPeripheral){
                 startConnectToPeripheral((ConnectToPeripheral) pendingTask);
@@ -162,9 +161,7 @@ public class BLEHandler extends ConnectionHandler {
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
             Log.d(TAG+taskTag, "task of "+pendingTask.asString()+" has ended. (successful or not)");
             pendingTask = null;
-            if (!queue.isEmpty()){
-                startNextTask();
-            }
+            startNextTask();
         }
     }
 
@@ -177,7 +174,30 @@ public class BLEHandler extends ConnectionHandler {
             return;
         }
         centralIsOn = true;
-        if (!isScanning) addToQueue(new Scan());
+        if (!isScanning){
+            //1 device to not make users wait too much for the first connection
+            addToQueue(new Scan(1));
+        }
+    }
+
+    private void startScanWhenEmptyQueue(){
+        long timeGap = System.currentTimeMillis() - lastScanTime;
+
+        if (timeGap < SCAN_TIME_GAP){
+            Log.d(TAG+CTRL, "emptyQueue: will add scan task after"+ timeGap +"milliseconds");
+            long remainingTime = SCAN_TIME_GAP - timeGap;
+            taskEnded();
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                if (queue.isEmpty()) return;
+                Log.d(TAG+CTRL, "emptyQueue: added scan task ( after "+remainingTime+" milliseconds)");
+                addToQueue(new Scan(3));
+            }, remainingTime);
+
+            return;
+        }
+
+        Log.d(TAG+CTRL, "emptyQueue: adding scan task ");
+        addToQueue(new Scan(3));
     }
     @SuppressLint("MissingPermission")
     private void startScan(Scan task){
@@ -186,18 +206,25 @@ public class BLEHandler extends ConnectionHandler {
             taskEnded();
             return;
         }
+
+        long timeGap = System.currentTimeMillis() - lastScanTime;
+        if (timeGap < SCAN_TIME_GAP){
+            Log.d(TAG+CTRL, "scanning too early for the 5 scans per 30 seconds rule. ignoring task");
+            taskEnded();
+            return;
+        }
+
         isScanning = true;
         ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(CommonConstants.SERVICE_UUID)).build();
         scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), scanCallback);
+        lastScanTime = System.currentTimeMillis();
 
-        //Todo: update timeout logic
-        //Timeout after 4 seconds
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (pendingTask instanceof Scan){
-                Log.w(TAG+CTRL, "timing out scan after 4 seconds");
+            if (pendingTask == task){
+                Log.w(TAG+CTRL, "timing out scan after "+MAX_SCAN_DURATION+" milliseconds");
                 taskEnded();
             }
-        }, 4_000);
+        }, MAX_SCAN_DURATION);
     }
     private final ScanCallback scanCallback = new ScanCallback() {
         @SuppressLint("MissingPermission")
@@ -318,7 +345,6 @@ public class BLEHandler extends ConnectionHandler {
                 if (avoidConnectingToPeripheral(gatt.getDevice())){
                     Log.d(TAG+CTRL, "skip trying to reconnect to "+name+address);
                     gatt.close();
-                    addToQueue(new Scan());
                     return;
                 }
 
@@ -401,7 +427,10 @@ public class BLEHandler extends ConnectionHandler {
                 connectingPeripherals.remove(gatt.getDevice().getAddress());
                 connectedPeripherals.put(uuid, gatt);
                 addIfTwoWayConnected(uuid);
-                addToQueue(new Scan());
+
+                //Write my uuid
+                BluetoothGattCharacteristic idCharacteristic = gatt.getService(SERVICE_UUID).getCharacteristic(ID_UUID);
+                addToQueue(new WriteCharacteristic(gatt, idCharacteristic, ConvertUUID.uuidToBytes(id), 3));
 
             }catch (Exception e){
                 //if can't parse or null errors
@@ -629,6 +658,7 @@ public class BLEHandler extends ConnectionHandler {
 
                 connectingCentrals.put(device.getAddress(), device);
                 Log.d(TAG+PRFL, "Central connected (not fully though): " + name + address+". Now have " + connectingCentrals.size() + "connecting centrals. status:"+ status );
+
                 //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
                 addToQueue(new ConnectCentral(device));
 
@@ -674,24 +704,51 @@ public class BLEHandler extends ConnectionHandler {
         @SuppressLint("MissingPermission")
         @Override
         public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+            SendResponse successResponse = new SendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
+            SendResponse failResponse = new SendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
 
             if (characteristic.getUuid().equals(MESSAGE_UUID)) {
                 String message = new String(value, StandardCharsets.UTF_8);
                 Log.d(TAG+PRFL, "Received (string?): " + message+" from "+device.getName()+device.getAddress());
                 UUID uuid = getCentralUUID(device.getAddress());
-                notifyIfTwoWayConnected(uuid, value);
-                notifyDiscovered(uuid, device.getAddress(), device.getName());
 
-                if (responseNeeded) {
-                    addToQueue(new SendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null));
+                if (uuid == null){
+                    Log.d(TAG+PRFL, "central send a message but was not connected"+device.getName()+device.getAddress()+" disconnecting");
+                    addToQueue(new DisconnectCentral(device));
+                    if (responseNeeded) addToQueue(failResponse);
+                    return;
                 }
+
+                notifyIfTwoWayConnected(uuid, value);
+                if (responseNeeded) addToQueue(successResponse);
+
+            } else if (characteristic.getUuid().equals(ID_UUID)){
+                UUID otherId;
+                try{
+                    otherId = ConvertUUID.bytesToUUID(value);
+                }catch (Exception e){
+                    Log.d(TAG+PRFL, "couldn't parse uuid from central"+device.getName()+device.getAddress()+" where value is"+ Arrays.toString(value));
+                    addToQueue(new DisconnectCentral(device));
+                    if (responseNeeded) addToQueue(failResponse);
+                    return;
+                }
+
+                if (connectedCentrals.containsKey(otherId)){
+                    Log.d(TAG+PRFL, "central attempted connecting twice "+device.getName()+device.getAddress()+" with uuid"+otherId);
+                    addToQueue(new DisconnectCentral(device));
+                    if (responseNeeded) addToQueue(failResponse);
+                    return;
+                }
+
+                connectedCentrals.put(otherId, device);
+                connectingCentrals.remove(device.getAddress());
+                addIfTwoWayConnected(otherId);
+                if (responseNeeded) addToQueue(successResponse);
 
             } else{
                 Log.e(TAG+PRFL, "unexpected characteristic was written:"+characteristic.getUuid());
                 addToQueue(new DisconnectCentral(device));
-                if (responseNeeded){
-                    addToQueue(new SendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null));
-                }
+                if (responseNeeded) addToQueue(failResponse);
             }
         }
     };

@@ -14,9 +14,12 @@ public abstract class BLETask {
 }
 
 class Scan extends BLETask {
-    //TODO: update logic to handle multiple devicesBeforeConnect
-    int devicesBeforeConnect = 1;
+    int devicesBeforeConnect;
     boolean expires = false;
+
+    Scan(int devicesBeforeConnect){
+        this.devicesBeforeConnect =devicesBeforeConnect;
+    }
 
     @Override
     public String asString() {
