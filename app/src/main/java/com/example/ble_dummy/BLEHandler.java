@@ -92,12 +92,9 @@ public class BLEHandler extends ConnectionHandler {
     private void addToQueue (BLETask task){
         synchronized (queue){
             queue.add(task);
+            String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
 
-            String extraTag = "--";
-            if (task instanceof PeripheralTask) extraTag = PRFL;
-            else if (task instanceof CentralTask) extraTag = CTRL;
-
-            Log.d(TAG+extraTag,"added task "+task.asString()+" .To a queue of length:"+queue.size());
+            Log.d(TAG+taskTag,"added task "+task.asString()+" .To a queue of length:"+queue.size());
             if (pendingTask == null){
                 startNextTask();
             }
@@ -317,11 +314,14 @@ public class BLEHandler extends ConnectionHandler {
 
             if (newState == BluetoothGatt.STATE_CONNECTED) {
                 if (!anticipatedConnect){
-                    Log.w(TAG+CTRL, "current task is not connect to peripheral or not this device, skipping");
+                    Log.w(TAG+CTRL, "did not anticipate connecting to "+name+address+", disconnecting");
+                    addToQueue(new DisconnectPeripheral(gatt));
+                    taskEnded();
                     return;
                 }
                 Log.d(TAG+CTRL, "Connected (not fully though) to: " + name+address);
                 addToQueue(new DiscoverServices(gatt));
+                notifyDiscovered(null, name, address);
                 taskEnded();
 
             }else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
@@ -401,41 +401,44 @@ public class BLEHandler extends ConnectionHandler {
             }
 
 
-            boolean noSuccessful = status != BluetoothGatt.GATT_SUCCESS;
+            boolean notSuccessful = status != BluetoothGatt.GATT_SUCCESS;
             boolean notId  = !characteristic.getUuid().equals(ID_UUID);
             boolean centralIsOff = !centralIsOn;
-            if (noSuccessful || notId || centralIsOff) {
-                Log.w(TAG+CTRL, "stopping from fully connecting"+gatt.getDevice().getName()+gatt.getDevice().getAddress()+ "due to notSuccessful:"+noSuccessful+" notId:"+notId+" centralIsOff"+centralIsOff);
+            if (notSuccessful || notId || centralIsOff) {
+                Log.w(TAG+CTRL, "stopping from fully connecting"+gatt.getDevice().getName()+gatt.getDevice().getAddress()+ "due to notSuccessful:"+notSuccessful+" notId:"+notId+" centralIsOff"+centralIsOff);
                 addToQueue(new DisconnectPeripheral(gatt));
                 taskEnded();
                 return;
             }
 
             Log.d(TAG+CTRL, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+ Arrays.toString(characteristic.getValue()));
-
+            UUID uuid;
+            BluetoothGattCharacteristic idCharacteristic;
             try {
-                Log.d(TAG+CTRL, "id received");
-                UUID uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
-                Log.d(TAG+CTRL, "Device UUID of " + gatt.getDevice().getName() + " is : " + uuid + "now fully connected!");
-
-                //Fully connected
-                connectingPeripherals.remove(gatt.getDevice().getAddress());
-                connectedPeripherals.put(uuid, gatt);
-                addIfTwoWayConnected(uuid);
-                addToQueue(new Scan());
-
-                //Write my uuid
-                BluetoothGattCharacteristic idCharacteristic = gatt.getService(SERVICE_UUID).getCharacteristic(ID_UUID);
-                addToQueue(new WriteCharacteristic(gatt, idCharacteristic, ConvertUUID.uuidToBytes(id), 3));
-
-                taskEnded();
-            }catch (Exception e){
-                //if can't parse or null errors
-                Log.e(TAG+CTRL, "error when reading id"+e);
+                uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
+                idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.ID_UUID);
+            }catch (Exception e) {
+                Log.e(TAG + CTRL, "error when reading id/idCharacterstic" + e);
                 addToQueue(new DisconnectPeripheral(gatt));
                 taskEnded();
                 throw e;
             }
+
+            Log.d(TAG+CTRL, "id received"+uuid);
+            if (connectedPeripherals.containsKey(uuid)){
+                Log.d(TAG+CTRL, "peripheral"+gatt.getDevice().getName()+gatt.getDevice().getName()+" is already connected with uuid "+uuid+",disconnecting ");
+                addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
+                return;
+            }
+
+            Log.d(TAG+CTRL, "Device UUID of " + gatt.getDevice().getName() + " is : " + uuid + "now fully connected!");
+            connectingPeripherals.remove(gatt.getDevice().getAddress());
+            connectedPeripherals.put(uuid, gatt);
+            addIfTwoWayConnected(uuid);
+            addToQueue(new WriteCharacteristic(gatt, idCharacteristic, ConvertUUID.uuidToBytes(id), 3));
+            addToQueue(new Scan());
+            taskEnded();
         }
 
         @Override
@@ -577,7 +580,7 @@ public class BLEHandler extends ConnectionHandler {
     @SuppressLint("MissingPermission")
     private void startAdvertising(Advertise task) {
         if (gattServer == null || !peripheralIsOn){
-            Log.d(TAG+PRFL, "skipping starting gatt server due to gatIsNull:"+(gattServer==null) + " peripheralIsOff:"+!peripheralIsOn);
+            Log.d(TAG+PRFL, "skipping starting advertising due to gatIsNull:"+(gattServer==null) + " peripheralIsOff:"+!peripheralIsOn);
             taskEnded();
             return;
         }
@@ -662,6 +665,7 @@ public class BLEHandler extends ConnectionHandler {
 
                 //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
                 addToQueue(new ConnectCentral(device));
+                notifyDiscovered(null, device.getName(), device.getAddress());
 
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 if (anticipatingDisconnect){
@@ -737,7 +741,7 @@ public class BLEHandler extends ConnectionHandler {
                 }
 
                 if (connectedCentrals.containsKey(otherId)){
-                    Log.d(TAG+PRFL, "central attempted connecting twice "+device.getName()+device.getAddress()+" with uuid"+otherId);
+                    Log.d(TAG+PRFL, "central attempted connecting twice "+device.getName()+device.getAddress()+" with uuid"+otherId+", disconnecting");
                     addToQueue(new DisconnectCentral(device));
                     if (responseNeeded) addToQueue(failResponse);
                     return;
