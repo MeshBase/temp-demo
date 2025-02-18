@@ -45,7 +45,7 @@ class ConnectToPeripheral extends CentralTask {
     @Override
     public String asString() {
         @SuppressLint("MissingPermission") String deviceName = (device.getName() != null) ? device.getName() : "Unknown";
-        return "ConnectToPeripheral: device = " + deviceName + " (" + device.getAddress() + "), retriesLeft = " + ", expireMilli = " + expireMilli; }
+        return "ConnectToPeripheral: device = " + deviceName + " (" + device.getAddress() + "), retriesLeft = ";}
 }
 
 class DiscoverServices extends CentralTask {
@@ -60,7 +60,7 @@ class DiscoverServices extends CentralTask {
         BluetoothDevice device = gatt.getDevice();
         @SuppressLint("MissingPermission") String deviceName = (device.getName() != null) ? device.getName() : "Unknown";
         return "DiscoverServices: device = " + deviceName
-                + " (" + device.getAddress() + "), expireMilli = " + expireMilli;
+                + " (" + device.getAddress() + ")";
     }
 }
 
@@ -96,8 +96,7 @@ class WriteCharacteristic extends CentralTask {
         @SuppressLint("MissingPermission") String deviceName = (device.getName() != null) ? device.getName() : "Unknown";
         return "WriteCharacteristic: device = " + deviceName
                 + " (" + device.getAddress() + "), data = " + Arrays.toString(data)
-                + ", remainingRetries = " + remainingRetries
-                + ", expireMilli = " + expireMilli;
+                + ", remainingRetries = " + remainingRetries;
     }
 }
 
@@ -116,7 +115,7 @@ class DisconnectPeripheral extends CentralTask {
         BluetoothDevice device = gatt.getDevice();
         @SuppressLint("MissingPermission") String deviceName = (device.getName() != null) ? device.getName() : "Unknown";
         return "DisconnectPeripheral: device = " + deviceName
-                + " (" + device.getAddress() + "), expireMilli = " + expireMilli;
+                + " (" + device.getAddress() + ")" ;
     }
 }
 
@@ -129,7 +128,7 @@ class StartGattServer extends PeripheralTask {
 
     @Override
     public String asString() {
-        return "StartGattServer, expireMilli = " + expireMilli;
+        return "StartGattServer";
     }
 }
 
@@ -137,7 +136,7 @@ class Advertise extends PeripheralTask {
 
     @Override
     public String asString() {
-        return "Advertise, expireMilli = " + expireMilli;
+        return "Advertise";
     }
 }
 
@@ -152,7 +151,7 @@ class ConnectCentral extends PeripheralTask {
     public String asString() {
         @SuppressLint("MissingPermission") String deviceName = (device.getName() != null) ? device.getName() : "Unknown";
         return "ConnectCentral: device = " + deviceName
-                + " (" + device.getAddress() + "), expireMilli = " + expireMilli;
+                + " (" + device.getAddress() + ")";
     }
 }
 
@@ -177,8 +176,7 @@ class SendResponse extends PeripheralTask {
         return "SendWriteResponse: device = " + deviceName
                 + " (" + device.getAddress() + "), requestId = " + requestId
                 + ", newState = " + newState + ", offset = " + offset
-                + ", data = " + Arrays.toString(data)
-                + ", expireMilli = " + expireMilli;
+                + ", data = " + Arrays.toString(data);
     }
 }
 
@@ -193,7 +191,7 @@ class DisconnectCentral extends PeripheralTask {
     public String asString() {
         @SuppressLint("MissingPermission") String deviceName = (device.getName() != null) ? device.getName() : "Unknown";
         return "DisconnectCentral: device = " + deviceName
-                + " (" + device.getAddress() + "), expireMilli = " + expireMilli;
+                + " (" + device.getAddress() + ")";
     }
 }
 
@@ -201,6 +199,6 @@ class CloseGatt extends PeripheralTask {
 
     @Override
     public String asString() {
-        return "CloseGatt, expireMilli = " + expireMilli;
+        return "CloseGatt";
     }
 }
