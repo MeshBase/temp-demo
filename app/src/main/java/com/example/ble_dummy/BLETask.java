@@ -21,6 +21,10 @@ class Scan extends BLETask {
         this.devicesBeforeConnect =devicesBeforeConnect;
     }
 
+    Scan(){
+        this.devicesBeforeConnect = 5;
+    }
+
     @Override
     public String asString() {
         return "Scan: devicesBeforeConnect = " + devicesBeforeConnect

@@ -114,9 +114,7 @@ public class BLEHandler extends ConnectionHandler {
             pendingTask = queue.poll();
 
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
-            if (pendingTask == null){
-                startScanWhenEmptyQueue();
-            }else if (pendingTask instanceof Scan){
+            if (pendingTask instanceof Scan){
                 startScan((Scan) pendingTask);
             }else if (pendingTask instanceof ConnectToPeripheral){
                 startConnectToPeripheral((ConnectToPeripheral) pendingTask);
@@ -150,6 +148,8 @@ public class BLEHandler extends ConnectionHandler {
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     Log.w(TAG+taskTag, pendingTask.asString()+" Timed out after"+pendingTask.expireMilli+"ms. Moving on to next task");
                     pendingTask = null;
+                    //In case this is the only task so that a scan task may never be added
+                    addToQueue(new Scan());
                     startNextTask();
                 }, pendingTask.expireMilli);
             }
@@ -161,7 +161,9 @@ public class BLEHandler extends ConnectionHandler {
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
             Log.d(TAG+taskTag, "task of "+pendingTask.asString()+" has ended. (successful or not)");
             pendingTask = null;
-            startNextTask();
+            if (!queue.isEmpty()){
+                startNextTask();
+            }
         }
     }
 
@@ -180,37 +182,25 @@ public class BLEHandler extends ConnectionHandler {
         }
     }
 
-    private void startScanWhenEmptyQueue(){
-        long timeGap = System.currentTimeMillis() - lastScanTime;
-
-        if (timeGap < SCAN_TIME_GAP){
-            Log.d(TAG+CTRL, "emptyQueue: will add scan task after"+ timeGap +"milliseconds");
-            long remainingTime = SCAN_TIME_GAP - timeGap;
-            taskEnded();
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                if (queue.isEmpty()) return;
-                Log.d(TAG+CTRL, "emptyQueue: added scan task ( after "+remainingTime+" milliseconds)");
-                addToQueue(new Scan(3));
-            }, remainingTime);
-
-            return;
-        }
-
-        Log.d(TAG+CTRL, "emptyQueue: adding scan task ");
-        addToQueue(new Scan(3));
-    }
     @SuppressLint("MissingPermission")
     private void startScan(Scan task){
-        if (!centralIsOn || isScanning){
-            Log.d(TAG+CTRL, "ignoring scan task due to centralIsOff: "+!centralIsOn + " scanning already: "+isScanning);
+        boolean isOnlyTask = queue.size()==1;
+        if (!centralIsOn || isScanning || !isOnlyTask){
+            Log.d(TAG+CTRL, "ignoring scan task due to centralIsOff: "+!centralIsOn + " scanning already: "+isScanning+" notOnlyTaskInQueue:"+!isOnlyTask);
             taskEnded();
             return;
         }
 
         long timeGap = System.currentTimeMillis() - lastScanTime;
         if (timeGap < SCAN_TIME_GAP){
-            Log.d(TAG+CTRL, "scanning too early for the 5 scans per 30 seconds rule. ignoring task");
+            long addAfter = SCAN_TIME_GAP - timeGap;
+            Log.d(TAG+CTRL, "scanning too early for the 5 scans per 30 seconds rule. re adding task after "+addAfter+" milliseconds");
+
             taskEnded();
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                addToQueue(new Scan(task.devicesBeforeConnect));
+            }, addAfter);
+
             return;
         }
 
@@ -220,10 +210,11 @@ public class BLEHandler extends ConnectionHandler {
         lastScanTime = System.currentTimeMillis();
 
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (pendingTask == task){
-                Log.w(TAG+CTRL, "timing out scan after "+MAX_SCAN_DURATION+" milliseconds");
-                taskEnded();
-            }
+            if (pendingTask != task)return;
+            Log.w(TAG+CTRL, "timing out scan after "+MAX_SCAN_DURATION+" milliseconds. adding scan task");
+            //In case it needs more time to find devices
+            addToQueue(new Scan(task.devicesBeforeConnect));
+            taskEnded();
         }, MAX_SCAN_DURATION);
     }
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -242,16 +233,15 @@ public class BLEHandler extends ConnectionHandler {
                 Log.d(TAG+CTRL, "skipping connecting to"+device.getName()+device.getAddress() );
                 return;
             }
+            addToQueue(new ConnectToPeripheral(device));
 
             ((Scan) pendingTask).devicesBeforeConnect -= 1;
-
             int remaining = ((Scan) pendingTask).devicesBeforeConnect;
             if (remaining <= 0) {
                 scanner.stopScan(scanCallback);
                 isScanning = false;
                 taskEnded();
             }
-            addToQueue(new ConnectToPeripheral(device));
         }
 
         @SuppressLint("MissingPermission")
@@ -263,6 +253,9 @@ public class BLEHandler extends ConnectionHandler {
                 Log.w(TAG+CTRL, "current task is not scan, skipping handling scan fail");
                 return;
             }
+
+            Log.d(TAG+CTRL, "scan failed"+errorCode+" adding scan task again");
+            addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
 
             scanner.stopScan(scanCallback);
             isScanning = false;
@@ -327,14 +320,11 @@ public class BLEHandler extends ConnectionHandler {
                     Log.w(TAG+CTRL, "current task is not connect to peripheral or not this device, skipping");
                     return;
                 }
-                taskEnded();
                 Log.d(TAG+CTRL, "Connected (not fully though) to: " + name+address);
                 addToQueue(new DiscoverServices(gatt));
+                taskEnded();
 
             }else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                if (anticipatedConnect || anticipatedDisconnect){
-                    taskEnded();
-                }
 
                 Log.w(TAG+CTRL, "Disconnected from: " + name + address+" anticipated:"+(anticipatedConnect||anticipatedDisconnect));
                 UUID uuid = getPeripheralUUID(address);
@@ -345,13 +335,15 @@ public class BLEHandler extends ConnectionHandler {
                 if (avoidConnectingToPeripheral(gatt.getDevice())){
                     Log.d(TAG+CTRL, "skip trying to reconnect to "+name+address);
                     gatt.close();
+                    if (anticipatedConnect || anticipatedDisconnect) taskEnded();
                     return;
                 }
 
+
                 addToQueue(new ConnectToPeripheral(gatt.getDevice()));
-
+                addToQueue(new Scan());
+                if (anticipatedConnect || anticipatedDisconnect) taskEnded();
             }
-
 
         }
         @SuppressLint("MissingPermission")
@@ -362,11 +354,11 @@ public class BLEHandler extends ConnectionHandler {
                 Log.w(TAG+CTRL, "current task is not discover services or not for this device, skipping");
                 return;
             }
-            taskEnded();
 
             if (status != BluetoothGatt.GATT_SUCCESS){
                 Log.d(TAG+CTRL, "Services discovery failed for "+gatt.getDevice().getName());
                 addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
                 return;
             }
             Log.d(TAG+CTRL, "Services discovered for " + gatt.getDevice().getAddress());
@@ -374,6 +366,7 @@ public class BLEHandler extends ConnectionHandler {
             if (!centralIsOn){
                 Log.d(TAG+CTRL, "can't continue connection ladder because central is off");
                 addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
                 return;
             }
 
@@ -382,10 +375,12 @@ public class BLEHandler extends ConnectionHandler {
                 gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.MESSAGE_UUID);
                 BluetoothGattCharacteristic idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(ID_UUID);
                 addToQueue(new ReadCharacteristic(idCharacteristic, gatt));
+                taskEnded();
             }catch (Exception e){
                 //see if any null errors
                 Log.e(TAG+CTRL, "error on discover services"+e);
                 addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
                 throw  e;
             }
         }
@@ -405,7 +400,6 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
 
-            taskEnded();
 
             boolean noSuccessful = status != BluetoothGatt.GATT_SUCCESS;
             boolean notId  = !characteristic.getUuid().equals(ID_UUID);
@@ -413,6 +407,7 @@ public class BLEHandler extends ConnectionHandler {
             if (noSuccessful || notId || centralIsOff) {
                 Log.w(TAG+CTRL, "stopping from fully connecting"+gatt.getDevice().getName()+gatt.getDevice().getAddress()+ "due to notSuccessful:"+noSuccessful+" notId:"+notId+" centralIsOff"+centralIsOff);
                 addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
                 return;
             }
 
@@ -427,15 +422,18 @@ public class BLEHandler extends ConnectionHandler {
                 connectingPeripherals.remove(gatt.getDevice().getAddress());
                 connectedPeripherals.put(uuid, gatt);
                 addIfTwoWayConnected(uuid);
+                addToQueue(new Scan());
 
                 //Write my uuid
                 BluetoothGattCharacteristic idCharacteristic = gatt.getService(SERVICE_UUID).getCharacteristic(ID_UUID);
                 addToQueue(new WriteCharacteristic(gatt, idCharacteristic, ConvertUUID.uuidToBytes(id), 3));
 
+                taskEnded();
             }catch (Exception e){
                 //if can't parse or null errors
                 Log.e(TAG+CTRL, "error when reading id"+e);
                 addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
                 throw e;
             }
         }
@@ -448,21 +446,23 @@ public class BLEHandler extends ConnectionHandler {
                 Log.w(TAG+CTRL, "current task is not characteristic writing or not this characteristic, skipping");
                 return;
             }
-            taskEnded();
             WriteCharacteristic task = (WriteCharacteristic) pendingTask;
 
             if (status == BluetoothGatt.GATT_SUCCESS){
                 Log.d(TAG+CTRL, "sent data "+ Arrays.toString(task.data) +" successfully!");
+                taskEnded();
                 return;
             }
 
             if (task.remainingRetries <= 0){
                 Log.d(TAG+CTRL, "could not send to characteristic after retries, stopping");
                 addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
                 return;
             }
 
             addToQueue(new WriteCharacteristic(gatt, characteristic, task.data, task.remainingRetries-1  ));
+            taskEnded();
 
         }
     };
@@ -570,9 +570,9 @@ public class BLEHandler extends ConnectionHandler {
         service.addCharacteristic(messageCharacteristic);
         service.addCharacteristic(idCharacteristic);
         gattServer.addService(service);
-        taskEnded();
 
         addToQueue(new Advertise());
+        taskEnded();
     }
     @SuppressLint("MissingPermission")
     private void startAdvertising(Advertise task) {
@@ -605,8 +605,8 @@ public class BLEHandler extends ConnectionHandler {
                 Log.w(TAG+PRFL, "current task is not advertisement, skipping");
                 return;
             }
-            taskEnded();
             Log.d(TAG+PRFL, "Advertisement started");
+            taskEnded();
         }
 
         @Override
@@ -618,8 +618,9 @@ public class BLEHandler extends ConnectionHandler {
                 Log.w(TAG+PRFL, "current task is not advertisement, skipping canceling it");
                 return;
             }
-            taskEnded();
+            //TODO: handle advertise failure
             Log.d(TAG+PRFL, "Advertisement failed:" + errorCode);
+            taskEnded();
         }
     };
 
@@ -665,12 +666,12 @@ public class BLEHandler extends ConnectionHandler {
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 if (anticipatingDisconnect){
                     Log.d(TAG+PRFL, "anticipated disconnect of "+name+address+" is successful");
-                    taskEnded();
                 }
 
                 if (!exists) {
                     //Can happen when both central and peripheral decide to disconnect at the same time
                     Log.w(TAG+PRFL, name + address + " was already not connected. Ignoring disconnect.");
+                    if (anticipatingDisconnect) taskEnded();
                     return;
                 }
 
@@ -679,6 +680,8 @@ public class BLEHandler extends ConnectionHandler {
                 connectingCentrals.remove(address);
                 connectedCentrals.remove(uuid);
                 removeIfTwoWayConnected(uuid);
+                addToQueue(new Scan());
+                taskEnded();
 
             } else {
                 Log.w(TAG+PRFL, "Unknown state: " + newState + " status: "+status);
@@ -743,6 +746,7 @@ public class BLEHandler extends ConnectionHandler {
                 connectedCentrals.put(otherId, device);
                 connectingCentrals.remove(device.getAddress());
                 addIfTwoWayConnected(otherId);
+                addToQueue(new Scan());
                 if (responseNeeded) addToQueue(successResponse);
 
             } else{
@@ -758,10 +762,11 @@ public class BLEHandler extends ConnectionHandler {
         //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
         if (gattServer == null){
             Log.d(TAG+PRFL, "gatt server has been already closed, skipping connecting");
+            taskEnded();
         }else{
             gattServer.connect(task.device, false);
+            taskEnded();
         }
-        taskEnded();
     }
 
     @SuppressLint("MissingPermission")
@@ -785,10 +790,11 @@ public class BLEHandler extends ConnectionHandler {
     private void startSendResponse(SendResponse task){
         if (gattServer == null){
             Log.d(TAG+PRFL, "gatt server already closed, skipping disconnecting");
+            taskEnded();
         }else{
             gattServer.sendResponse(task.device, task.requestId, task.newState, task.offset, task.data);
+            taskEnded();
         }
-        taskEnded();
     }
 
 @SuppressLint("MissingPermission")
