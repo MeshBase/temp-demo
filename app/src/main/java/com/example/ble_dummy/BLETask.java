@@ -97,15 +97,12 @@ class WriteCharacteristic extends CentralTask {
 
 class DisconnectPeripheral extends CentralTask {
     BluetoothGatt gatt;
-    boolean forgetRetries ;
 
     DisconnectPeripheral(BluetoothGatt gatt) {
         this.gatt = gatt;
-        this.forgetRetries = false;
     }
     DisconnectPeripheral(BluetoothGatt gatt,  boolean forgetRetries) {
         this.gatt = gatt;
-        this.forgetRetries = forgetRetries;
     }
 
     @Override

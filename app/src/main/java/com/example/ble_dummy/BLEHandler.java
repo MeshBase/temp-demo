@@ -64,7 +64,7 @@ public class BLEHandler extends ConnectionHandler {
 
     /////central fields
     static final String CTRL = " central: ";
-    private final Set<String> connectingPeripherals = new HashSet<>();
+    private final HashMap<String, BluetoothDevice> connectingPeripherals = new HashMap<>();
     private final Map<UUID, BluetoothGatt> connectedPeripherals = new HashMap<>();
     private boolean centralIsOn = false;
     BluetoothLeScanner scanner;
@@ -220,7 +220,6 @@ public class BLEHandler extends ConnectionHandler {
 
             int remaining = ((Scan) pendingTask).devicesBeforeConnect;
             if (remaining <= 0) {
-                //TODO: add timer to stop scan
                 scanner.stopScan(scanCallback);
                 isScanning = false;
                 taskEnded();
@@ -228,6 +227,7 @@ public class BLEHandler extends ConnectionHandler {
             addToQueue(new ConnectToPeripheral(device));
         }
 
+        @SuppressLint("MissingPermission")
         @Override
         public void onScanFailed(int errorCode) {
             super.onScanFailed(errorCode);
@@ -236,6 +236,9 @@ public class BLEHandler extends ConnectionHandler {
                 Log.w(TAG+CTRL, "current task is not scan, skipping handling scan fail");
                 return;
             }
+
+            scanner.stopScan(scanCallback);
+            isScanning = false;
             taskEnded();
         }
     };
@@ -253,7 +256,7 @@ public class BLEHandler extends ConnectionHandler {
     private boolean avoidConnectingToPeripheral(BluetoothDevice device){
         String address = device.getAddress();
         int retries = peripheralRetryCount.getOrDefault(address, 0);
-        boolean isAlreadyConnecting = connectingPeripherals.contains(address);
+        boolean isAlreadyConnecting = connectingPeripherals.containsKey(address);
         boolean isAlreadyConnected = getPeripheralUUID(address) != null;
         boolean avoid = !centralIsOn || isAlreadyConnecting || retries > MAX_PERIPHERAL_RETRIES || isAlreadyConnected;
         if (avoid && !isAlreadyConnected) {
@@ -277,6 +280,7 @@ public class BLEHandler extends ConnectionHandler {
 
         int count  = peripheralRetryCount.getOrDefault(device.getAddress(), 0);
         peripheralRetryCount.put(device.getAddress(), count + 1);
+        connectingPeripherals.put(device.getAddress(), device);
         device.connectGatt(context, false, gattCallback);
     }
 
@@ -288,14 +292,24 @@ public class BLEHandler extends ConnectionHandler {
             String address = gatt.getDevice().getAddress();
             String name = gatt.getDevice().getName();
 
-            boolean anticipated = pendingTask instanceof ConnectToPeripheral && ((ConnectToPeripheral) pendingTask).device.getAddress().equals(address);
+            boolean anticipatedConnect = pendingTask instanceof ConnectToPeripheral && ((ConnectToPeripheral) pendingTask).device.getAddress().equals(address);
+            boolean anticipatedDisconnect = pendingTask instanceof DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).gatt.getDevice().getAddress().equals(address);
 
-            if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                if (anticipated){
+            if (newState == BluetoothGatt.STATE_CONNECTED) {
+                if (!anticipatedConnect){
+                    Log.w(TAG+CTRL, "current task is not connect to peripheral or not this device, skipping");
+                    return;
+                }
+                taskEnded();
+                Log.d(TAG+CTRL, "Connected (not fully though) to: " + name+address);
+                addToQueue(new DiscoverServices(gatt));
+
+            }else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                if (anticipatedConnect || anticipatedDisconnect){
                     taskEnded();
                 }
 
-                Log.w(TAG+CTRL, "Disconnected from: " + name + address+" anticipated:"+anticipated);
+                Log.w(TAG+CTRL, "Disconnected from: " + name + address+" anticipated:"+(anticipatedConnect||anticipatedDisconnect));
                 UUID uuid = getPeripheralUUID(address);
                 removeIfTwoWayConnected(uuid);
                 connectingPeripherals.remove(address);
@@ -308,18 +322,8 @@ public class BLEHandler extends ConnectionHandler {
                     return;
                 }
 
-                int count = peripheralRetryCount.getOrDefault(address, 0);
-                peripheralRetryCount.put(address, count+1);
                 addToQueue(new ConnectToPeripheral(gatt.getDevice()));
 
-            } else if (newState == BluetoothGatt.STATE_CONNECTED) {
-                if (!anticipated){
-                    Log.w(TAG+CTRL, "current task is not connect to peripheral or not this device, skipping");
-                    return;
-                }
-                taskEnded();
-                Log.d(TAG+CTRL, "Connected (not fully though) to: " + name+address);
-                addToQueue(new DiscoverServices(gatt));
             }
 
 
@@ -341,11 +345,17 @@ public class BLEHandler extends ConnectionHandler {
             }
             Log.d(TAG+CTRL, "Services discovered for " + gatt.getDevice().getAddress());
 
+            if (!centralIsOn){
+                Log.d(TAG+CTRL, "can't continue connection ladder because central is off");
+                addToQueue(new DisconnectPeripheral(gatt));
+                return;
+            }
+
             try{
                 //to make sure message characteristic is not null
                 gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.MESSAGE_UUID);
                 BluetoothGattCharacteristic idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(ID_UUID);
-                addToQueue(new WriteCharacteristic(gatt, idCharacteristic, ConvertUUID.uuidToBytes(id), 3));
+                addToQueue(new ReadCharacteristic(idCharacteristic, gatt));
             }catch (Exception e){
                 //see if any null errors
                 Log.e(TAG+CTRL, "error on discover services"+e);
@@ -358,7 +368,12 @@ public class BLEHandler extends ConnectionHandler {
         @Override
         public void onCharacteristicRead(@NonNull BluetoothGatt gatt, @NonNull BluetoothGattCharacteristic characteristic, @NonNull byte[] value, int status) {
             super.onCharacteristicRead(gatt, characteristic, value, status);
-            boolean shouldContinue = pendingTask instanceof ReadCharacteristic && ((ReadCharacteristic) pendingTask).characteristic.getUuid().equals(characteristic.getUuid());
+
+            boolean isReadCharInstance = pendingTask instanceof ReadCharacteristic;
+            boolean isSameChar = isReadCharInstance && ((ReadCharacteristic) pendingTask).characteristic.getUuid().equals(characteristic.getUuid());
+            boolean isSameAddress = isReadCharInstance && ((ReadCharacteristic) pendingTask).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
+
+            boolean shouldContinue = isReadCharInstance && isSameChar && isSameAddress;
             if (!shouldContinue){
                 Log.w(TAG+CTRL, "current task is not read characteristic or not this characteristic, skipping");
                 return;
@@ -366,19 +381,16 @@ public class BLEHandler extends ConnectionHandler {
 
             taskEnded();
 
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.w(TAG+CTRL, "Failed to read characteristic from "+gatt.getDevice().getName());
+            boolean noSuccessful = status != BluetoothGatt.GATT_SUCCESS;
+            boolean notId  = !characteristic.getUuid().equals(ID_UUID);
+            boolean centralIsOff = !centralIsOn;
+            if (noSuccessful || notId || centralIsOff) {
+                Log.w(TAG+CTRL, "stopping from fully connecting"+gatt.getDevice().getName()+gatt.getDevice().getAddress()+ "due to notSuccessful:"+noSuccessful+" notId:"+notId+" centralIsOff"+centralIsOff);
                 addToQueue(new DisconnectPeripheral(gatt));
                 return;
             }
 
             Log.d(TAG+CTRL, "Read characteristic from "+gatt.getDevice().getName()+" char:"+characteristic.getUuid()+" val:"+ Arrays.toString(characteristic.getValue()));
-
-            if (!characteristic.getUuid().equals(ID_UUID)) {
-                Log.w(TAG+CTRL, "unexpected characteristic was read:"+characteristic.getUuid());
-                addToQueue(new DisconnectPeripheral(gatt));
-                return;
-            }
 
             try {
                 Log.d(TAG+CTRL, "id received");
@@ -389,6 +401,7 @@ public class BLEHandler extends ConnectionHandler {
                 connectingPeripherals.remove(gatt.getDevice().getAddress());
                 connectedPeripherals.put(uuid, gatt);
                 addIfTwoWayConnected(uuid);
+                addToQueue(new Scan());
 
             }catch (Exception e){
                 //if can't parse or null errors
@@ -427,10 +440,15 @@ public class BLEHandler extends ConnectionHandler {
 
     @SuppressLint("MissingPermission")
     private void startDisconnectPeripheral(DisconnectPeripheral task){
+        boolean isConnecting = connectingPeripherals.containsKey(task.gatt.getDevice().getAddress());
+        boolean isConnected = connectedPeripherals.containsKey(getPeripheralUUID(task.gatt.getDevice().getAddress()));
+        if (!isConnecting && !isConnected){
+            Log.d(TAG+CTRL, "skipping disconnect because"+task.gatt.getDevice().getName()+task.gatt.getDevice().getAddress()+"is already disconnected");
+            taskEnded();
+            return;
+        }
+
        task.gatt.disconnect();
-       if (task.forgetRetries){
-           peripheralRetryCount.remove(task.gatt.getDevice().getAddress());
-       }
     }
 
     @SuppressLint("MissingPermission")
@@ -459,15 +477,13 @@ public class BLEHandler extends ConnectionHandler {
         }
 
         centralIsOn = false;
-        Log.d(TAG+CTRL, "disconnecting to all devices:"+ connectedPeripherals.size());
+        Log.d(TAG+CTRL, "disconnecting to all connected devices:"+ connectedPeripherals.size()+" but has "+connectingPeripherals.size()+" connecting devices");
         for (BluetoothGatt gatt : connectedPeripherals.values()) {
-            addToQueue(new DisconnectPeripheral(gatt, true));
+            addToQueue(new DisconnectPeripheral(gatt));
         }
-        peripheralRetryCount.clear();
         if (pendingTask instanceof Scan){
-            //TODO: no need to handle isScanning
-            scanner.stopScan(scanCallback);
             isScanning = false;
+            scanner.stopScan(scanCallback);
         }
     }
 
@@ -596,10 +612,17 @@ public class BLEHandler extends ConnectionHandler {
             String address = device.getAddress();
             String name = device.getName();
 
+            boolean anticipatingDisconnect = pendingTask instanceof DisconnectCentral && ((DisconnectCentral) pendingTask).device.getAddress().equals(device.getAddress());
             boolean exists = connectingCentrals.containsKey(address) || (getCentralUUID(address)!=null);
+
             if (newState == BluetoothGatt.STATE_CONNECTED) {
                 if (exists) {
                     Log.w(TAG+PRFL, name + " (" + address + ") attempted to connect twice. Ignoring");
+                    addToQueue(new DisconnectCentral(device));
+                    return;
+                }
+                if (!peripheralIsOn){
+                    Log.d(TAG+PRFL, "disconnecting because peripheral is off: "+name+address);
                     addToQueue(new DisconnectCentral(device));
                     return;
                 }
@@ -610,13 +633,18 @@ public class BLEHandler extends ConnectionHandler {
                 addToQueue(new ConnectCentral(device));
 
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                if (anticipatingDisconnect){
+                    Log.d(TAG+PRFL, "anticipated disconnect of "+name+address+" is successful");
+                    taskEnded();
+                }
+
                 if (!exists) {
+                    //Can happen when both central and peripheral decide to disconnect at the same time
                     Log.w(TAG+PRFL, name + address + " was already not connected. Ignoring disconnect.");
                     return;
                 }
 
                 Log.d(TAG+PRFL, "Central disconnected: " + name + address+" status:"+status );
-                //Todo: handle initiated disconnect
                 UUID uuid = getCentralUUID(address);
                 connectingCentrals.remove(address);
                 connectedCentrals.remove(uuid);
@@ -631,12 +659,13 @@ public class BLEHandler extends ConnectionHandler {
         @Override
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
             super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
-            Log.d(TAG+PRFL, "Read request received from " + device.getName() + ":" + characteristic.getUuid());
+            boolean isRequestingId = characteristic.getUuid().equals(ID_UUID);
 
-            if (characteristic.getUuid().equals(ID_UUID)) {
-
+            if (peripheralIsOn && isRequestingId) {
+                Log.d(TAG+PRFL, "Id read request received from " + device.getName() + ":" + characteristic.getUuid());
                 addToQueue(new SendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(id)));
             }else{
+                Log.w(TAG+PRFL, "rejecting read request from" + device.getName() + ":" + characteristic.getUuid()+ "because didn'tRequestID"+isRequestingId+" peripheralIsOff:"+!peripheralIsOn);
                 addToQueue(new SendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null));
                 addToQueue(new DisconnectCentral(device));
             }
@@ -685,6 +714,13 @@ public class BLEHandler extends ConnectionHandler {
             taskEnded();
             return;
         }
+        boolean isConnecting = (connectingCentrals.containsKey(task.device.getAddress()));
+        boolean isConnected = getCentralUUID(task.device.getAddress()) != null;
+        if (!isConnecting && !isConnected){
+            Log.d(TAG+PRFL, "skipping disconnecting to "+task.device.getName()+task.device.getAddress()+" as it is already not connected");
+            taskEnded();
+            return;
+        }
         gattServer.cancelConnection(task.device);
     }
 
@@ -707,7 +743,7 @@ private void stopPeripheral(){
     peripheralIsOn = false;
     advertiser.stopAdvertising(advertisementCallback);
 
-    for (BluetoothDevice device: connectedCentrals.values()) {
+    for (BluetoothDevice device: connectingCentrals.values()) {
         addToQueue(new DisconnectCentral(device));
     }
 
@@ -722,6 +758,7 @@ private void stopPeripheral(){
 private void startClosingGatt(CloseGatt task){
     if (gattServer == null){
         Log.d(TAG+PRFL, "gatt has already been stopped, skipping");
+        taskEnded();
         return;
     }
     gattServer.close();
