@@ -91,10 +91,10 @@ public class BLEHandler extends ConnectionHandler {
     private final HashMap<UUID, BLEDevice> twoWayConnectedDevices = new HashMap<>();
     private void addToQueue (BLETask task){
         synchronized (queue){
-            queue.add(task);
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
-
             Log.d(TAG+taskTag,"added task "+task.asString()+" .To a queue of length:"+queue.size());
+
+            queue.add(task);
             if (pendingTask == null){
                 startNextTask();
             }
@@ -109,46 +109,54 @@ public class BLEHandler extends ConnectionHandler {
             }
 
             pendingTask = queue.poll();
-
-            String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
-            if (pendingTask instanceof Scan){
-                startScan((Scan) pendingTask);
-            }else if (pendingTask instanceof ConnectToPeripheral){
-                startConnectToPeripheral((ConnectToPeripheral) pendingTask);
-            }else if (pendingTask instanceof DiscoverServices){
-                startDiscoverServices((DiscoverServices) pendingTask);
-            }else if (pendingTask instanceof ReadCharacteristic){
-                startReadingCharacteristic((ReadCharacteristic) pendingTask);
-            } else if (pendingTask instanceof WriteCharacteristic){
-                startWritingCharacteristic((WriteCharacteristic) pendingTask);
-            }else if (pendingTask instanceof DisconnectPeripheral){
-                startDisconnectPeripheral((DisconnectPeripheral) pendingTask);
-            }else if (pendingTask instanceof StartGattServer){
-                startGattServer((StartGattServer) pendingTask);
-            }else if (pendingTask instanceof  Advertise){
-                startAdvertising((Advertise) pendingTask);
-            }else if (pendingTask instanceof SendResponse){
-                startSendResponse((SendResponse) pendingTask);
-            } else if (pendingTask instanceof ConnectCentral){
-                startConnectCentral((ConnectCentral) pendingTask);
-            }else if (pendingTask instanceof DisconnectCentral){
-                startDisconnectCentral((DisconnectCentral) pendingTask);
-            }else if (pendingTask instanceof CloseGatt){
-                startClosingGatt((CloseGatt) pendingTask);
-            } else{
-                Log.e(TAG+taskTag ,"unknown task type"+pendingTask.asString());
+            if (pendingTask == null){
+                Log.d(TAG, "Queue is empty. no pending task. not processing");
                 return;
             }
-            Log.d(TAG+taskTag,"executing "+pendingTask.asString());
 
-            if (pendingTask.expires){
+            BLETask task = pendingTask;
+            String taskTag = (task instanceof PeripheralTask)? PRFL: CTRL;
+
+            Log.d(TAG+taskTag,"executing "+task.asString());
+            if (task instanceof Scan){
+                startScan((Scan) task);
+            }else if (task instanceof ConnectToPeripheral){
+                startConnectToPeripheral((ConnectToPeripheral) pendingTask);
+            }else if (task instanceof DiscoverServices){
+                startDiscoverServices((DiscoverServices) task);
+            }else if (task instanceof ReadCharacteristic){
+                startReadingCharacteristic((ReadCharacteristic) task);
+            } else if (task instanceof WriteCharacteristic){
+                startWritingCharacteristic((WriteCharacteristic) task);
+            }else if (task instanceof DisconnectPeripheral){
+                startDisconnectPeripheral((DisconnectPeripheral) task);
+            }else if (task instanceof StartGattServer){
+                startGattServer((StartGattServer) task);
+            }else if (task instanceof  Advertise){
+                startAdvertising((Advertise) task);
+            }else if (task instanceof SendResponse){
+                startSendResponse((SendResponse) task);
+            } else if (task instanceof ConnectCentral){
+                startConnectCentral((ConnectCentral) task);
+            }else if (task instanceof DisconnectCentral){
+                startDisconnectCentral((DisconnectCentral) task);
+            }else if (task instanceof CloseGatt){
+                startClosingGatt((CloseGatt) task);
+            } else{
+                Log.e(TAG+taskTag ,"unknown task type"+task.asString());
+                return;
+            }
+
+            if (task.expires){
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (pendingTask != task) return;
+
                     Log.w(TAG+taskTag, pendingTask.asString()+" Timed out after"+pendingTask.expireMilli+"ms. Moving on to next task");
                     pendingTask = null;
                     //In case this is the only task so that a scan task may never be added
                     addToQueue(new Scan());
                     startNextTask();
-                }, pendingTask.expireMilli);
+                }, task.expireMilli);
             }
         }
     }
@@ -156,7 +164,7 @@ public class BLEHandler extends ConnectionHandler {
     private void taskEnded(){
         synchronized (queue){
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
-            Log.d(TAG+taskTag, "task of "+pendingTask.asString()+" has ended. (successful or not)");
+            Log.d(TAG+taskTag, "ended task of "+pendingTask.asString());
             pendingTask = null;
             if (!queue.isEmpty()){
                 startNextTask();
@@ -181,9 +189,9 @@ public class BLEHandler extends ConnectionHandler {
 
     @SuppressLint("MissingPermission")
     private void startScan(Scan task){
-        boolean isOnlyTask = queue.size()==1;
+        boolean isOnlyTask = queue.isEmpty();
         if (!centralIsOn || isScanning || !isOnlyTask){
-            Log.d(TAG+CTRL, "ignoring scan task due to centralIsOff: "+!centralIsOn + " scanning already: "+isScanning+" notOnlyTaskInQueue:"+!isOnlyTask);
+            Log.d(TAG+CTRL, "ignoring scan task due to centralIsOff: "+!centralIsOn + " scanning already: "+isScanning+" notOnlyTaskInQueue:"+!isOnlyTask+" (queueSize="+queue.size()+")");
             taskEnded();
             return;
         }
@@ -209,6 +217,8 @@ public class BLEHandler extends ConnectionHandler {
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             if (pendingTask != task)return;
             Log.w(TAG+CTRL, "timing out scan after "+MAX_SCAN_DURATION+" milliseconds. adding scan task");
+            isScanning = false;
+            scanner.stopScan(scanCallback);
             //In case it needs more time to find devices
             addToQueue(new Scan(task.devicesBeforeConnect));
             taskEnded();

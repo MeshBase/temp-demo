@@ -27,8 +27,7 @@ class Scan extends BLETask {
 
     @Override
     public String asString() {
-        return "Scan: devicesBeforeConnect = " + devicesBeforeConnect
-                + ", expireMilli = " + expireMilli;
+        return "Scan: devicesBeforeConnect = " + devicesBeforeConnect;
     }
 }
 
