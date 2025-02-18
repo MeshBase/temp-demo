@@ -134,6 +134,9 @@ class StartGattServer extends PeripheralTask {
 
 class Advertise extends PeripheralTask {
 
+    Advertise(){
+        this.expireMilli = 10_000; //needs longer time
+    }
     @Override
     public String asString() {
         return "Advertise";

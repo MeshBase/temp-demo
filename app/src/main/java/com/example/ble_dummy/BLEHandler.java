@@ -168,6 +168,8 @@ public class BLEHandler extends ConnectionHandler {
             pendingTask = null;
             if (!queue.isEmpty()){
                 startNextTask();
+            }else{
+                Log.d(TAG, "queue is empty, no next task to execute");
             }
         }
     }
@@ -618,7 +620,7 @@ public class BLEHandler extends ConnectionHandler {
                 Log.w(TAG+PRFL, "current task is not advertisement, skipping");
                 return;
             }
-            Log.d(TAG+PRFL, "Advertisement started");
+            Log.d(TAG+PRFL, "Advertisement started successfully");
             taskEnded();
         }
 
