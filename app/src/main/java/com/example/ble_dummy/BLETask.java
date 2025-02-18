@@ -45,7 +45,7 @@ class ConnectToPeripheral extends CentralTask {
     @Override
     public String asString() {
         @SuppressLint("MissingPermission") String deviceName = (device.getName() != null) ? device.getName() : "Unknown";
-        return "ConnectToPeripheral: device = " + deviceName + " (" + device.getAddress() + "), retriesLeft = ";}
+        return "ConnectToPeripheral: device = " + deviceName + " (" + device.getAddress() +")";}
 }
 
 class DiscoverServices extends CentralTask {

@@ -102,9 +102,10 @@ public class BLEHandler extends ConnectionHandler {
     }
     private void startNextTask(){
         synchronized (queue){
+
             if (pendingTask != null){
                 String oldTaskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
-                Log.w(TAG+oldTaskTag, "Can't do task until pending task: "+pendingTask.asString()+" is finished");
+                Log.w(TAG+oldTaskTag, "Can't do task:"+queue.peek()+" until pending task: "+pendingTask.asString()+" is finished");
                 return;
             }
 
