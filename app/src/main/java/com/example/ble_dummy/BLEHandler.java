@@ -400,8 +400,8 @@ public class BLEHandler extends ConnectionHandler {
 
         @SuppressLint("MissingPermission")
         @Override
-        public void onCharacteristicRead(@NonNull BluetoothGatt gatt, @NonNull BluetoothGattCharacteristic characteristic, @NonNull byte[] value, int status) {
-            super.onCharacteristicRead(gatt, characteristic, value, status);
+        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicRead(gatt, characteristic, status);
 
             boolean isReadCharInstance = pendingTask instanceof ReadCharacteristic;
             boolean isSameChar = isReadCharInstance && ((ReadCharacteristic) pendingTask).characteristic.getUuid().equals(characteristic.getUuid());
@@ -431,7 +431,7 @@ public class BLEHandler extends ConnectionHandler {
                 uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
                 idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.ID_UUID);
             }catch (Exception e) {
-                Log.e(TAG + CTRL, "error when reading id/idCharacterstic" + e);
+                Log.e(TAG + CTRL, "error when reading uuid / idCharacteristic" + e);
                 addToQueue(new DisconnectPeripheral(gatt));
                 taskEnded();
                 throw e;
