@@ -76,7 +76,6 @@ public class BLEHandler extends ConnectionHandler {
     /////peripheral fields
     static final String PRFL = "peripheral:";
     private BluetoothGattServer gattServer;
-    private BluetoothGattCharacteristic messageCharacteristic;
     private boolean peripheralIsOn = false;
     private final HashMap<String, BluetoothDevice> connectingCentrals = new HashMap<>();
     private final HashMap<UUID, BluetoothDevice> connectedCentrals = new HashMap<>();
@@ -111,7 +110,7 @@ public class BLEHandler extends ConnectionHandler {
 
             pendingTask = queue.poll();
             if (pendingTask == null){
-                Log.d(TAG, "Queue is empty. no pending task. not processing");
+                Log.d(TAG, "Queue is empty. no task to do");
                 return;
             }
 
@@ -119,33 +118,39 @@ public class BLEHandler extends ConnectionHandler {
             String taskTag = (task instanceof PeripheralTask)? PRFL: CTRL;
 
             Log.d(TAG+taskTag,"executing "+task.asString());
-            if (task instanceof Scan){
-                startScan((Scan) task);
-            }else if (task instanceof ConnectToPeripheral){
-                startConnectToPeripheral((ConnectToPeripheral) pendingTask);
-            }else if (task instanceof DiscoverServices){
-                startDiscoverServices((DiscoverServices) task);
-            }else if (task instanceof ReadCharacteristic){
-                startReadingCharacteristic((ReadCharacteristic) task);
-            } else if (task instanceof WriteCharacteristic){
-                startWritingCharacteristic((WriteCharacteristic) task);
-            }else if (task instanceof DisconnectPeripheral){
-                startDisconnectPeripheral((DisconnectPeripheral) task);
-            }else if (task instanceof StartGattServer){
-                startGattServer((StartGattServer) task);
-            }else if (task instanceof  Advertise){
-                startAdvertising((Advertise) task);
-            }else if (task instanceof SendResponse){
-                startSendResponse((SendResponse) task);
-            } else if (task instanceof ConnectCentral){
-                startConnectCentral((ConnectCentral) task);
-            }else if (task instanceof DisconnectCentral){
-                startDisconnectCentral((DisconnectCentral) task);
-            }else if (task instanceof CloseGatt){
-                startClosingGatt((CloseGatt) task);
-            } else{
-                Log.e(TAG+taskTag ,"unknown task type"+task.asString());
-                return;
+            try{
+                if (task instanceof Scan){
+                    startScan((Scan) task);
+                }else if (task instanceof ConnectToPeripheral){
+                    startConnectToPeripheral((ConnectToPeripheral) pendingTask);
+                }else if (task instanceof DiscoverServices){
+                    startDiscoverServices((DiscoverServices) task);
+                }else if (task instanceof ReadCharacteristic){
+                    startReadingCharacteristic((ReadCharacteristic) task);
+                } else if (task instanceof WriteCharacteristic){
+                    startWritingCharacteristic((WriteCharacteristic) task);
+                }else if (task instanceof DisconnectPeripheral){
+                    startDisconnectPeripheral((DisconnectPeripheral) task);
+                }else if (task instanceof StartGattServer){
+                    startGattServer((StartGattServer) task);
+                }else if (task instanceof  Advertise){
+                    startAdvertising((Advertise) task);
+                }else if (task instanceof SendResponse){
+                    startSendResponse((SendResponse) task);
+                } else if (task instanceof ConnectCentral){
+                    startConnectCentral((ConnectCentral) task);
+                }else if (task instanceof DisconnectCentral){
+                    startDisconnectCentral((DisconnectCentral) task);
+                }else if (task instanceof CloseGatt){
+                    startClosingGatt((CloseGatt) task);
+                } else{
+                    Log.e(TAG+taskTag ,"unknown task type"+task.asString());
+                    return;
+                }
+            } catch (Exception e) {
+                Log.w(TAG+taskTag, "error when executing task "+task.asString()+ ". Force moving on to next task. Error:"+e);
+                pendingTask = null;
+                startNextTask();
             }
 
             if (task.expires){
@@ -430,11 +435,12 @@ public class BLEHandler extends ConnectionHandler {
             try {
                 uuid = ConvertUUID.bytesToUUID(characteristic.getValue());
                 idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.ID_UUID);
+                if (idCharacteristic == null) throw new Exception("id characteristic should not be null");
             }catch (Exception e) {
                 Log.e(TAG + CTRL, "error when reading uuid / idCharacteristic" + e);
                 addToQueue(new DisconnectPeripheral(gatt));
                 taskEnded();
-                throw e;
+                return;
             }
 
             Log.d(TAG+CTRL, "id received"+uuid);
@@ -511,7 +517,7 @@ public class BLEHandler extends ConnectionHandler {
     private void startWritingCharacteristic(WriteCharacteristic task){
         task.characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         task.characteristic.setValue(task.data);
-        task.gatt.writeCharacteristic(messageCharacteristic);
+        task.gatt.writeCharacteristic(task.characteristic);
     }
 
     @SuppressLint("MissingPermission")
@@ -571,7 +577,7 @@ public class BLEHandler extends ConnectionHandler {
 
         BluetoothGattService service = new BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
-        messageCharacteristic = new BluetoothGattCharacteristic(
+        BluetoothGattCharacteristic messageCharacteristic = new BluetoothGattCharacteristic(
                 MESSAGE_UUID,
                 BluetoothGattCharacteristic.PROPERTY_WRITE | BluetoothGattCharacteristic.PROPERTY_READ,
                 BluetoothGattCharacteristic.PERMISSION_WRITE | BluetoothGattCharacteristic.PERMISSION_READ
