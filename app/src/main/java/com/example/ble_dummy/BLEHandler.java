@@ -798,7 +798,7 @@ public class BLEHandler extends ConnectionHandler {
     }
 
 @SuppressLint("MissingPermission")
-private void stopPeripheral(){
+public void stopPeripheral(){
     if (!peripheralIsOn) {
         Log.d(TAG+PRFL, "is already off");
         return;
