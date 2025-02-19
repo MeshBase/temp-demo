@@ -980,13 +980,17 @@ private void startClosingGatt(CloseGatt task){
             return;
         }
         BluetoothGattCharacteristic characteristic = getMessageCharacteristic(gatt);
-        addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3));
 
-        //To make sending the data faster for the user
         if (pendingTask instanceof Scan){
+            Log.d(TAG+CTRL, "ending scan to write quickly");
             scanner.stopScan(scanCallback);
             isScanning = false;
+
+            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3));
             addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
+            taskEnded();
+        }else{
+            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3));
         }
     }
 }
