@@ -9,20 +9,21 @@ import java.util.Arrays;
 
 public abstract class BLETask {
     public long expireMilli = 3_000L;
-    public boolean expires = true;
     public abstract String asString();
 }
 
 class Scan extends BLETask {
     int devicesBeforeConnect;
-    boolean expires = false;
+    static long MAX_SCAN_DURATION = 3_000;
 
     Scan(int devicesBeforeConnect){
         this.devicesBeforeConnect =devicesBeforeConnect;
+        this.expireMilli = MAX_SCAN_DURATION;
     }
 
     Scan(){
         this.devicesBeforeConnect = 5;
+        this.expireMilli = MAX_SCAN_DURATION;
     }
 
     @Override
