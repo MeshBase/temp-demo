@@ -123,7 +123,7 @@ public class BLEHandler extends ConnectionHandler {
                     expireTask(task, ()->expireScan((Scan) task));
                 }else if (task instanceof ConnectToPeripheral){
                     startConnectToPeripheral((ConnectToPeripheral) pendingTask);
-                    expireTask(task, null);
+                    expireTask(task, ()->expireConnectToPeripheral((ConnectToPeripheral)pendingTask));
                 }else if (task instanceof DiscoverServices){
                     startDiscoverServices((DiscoverServices) task);
                     expireTask(task, ()->expireDiscoverServices((DiscoverServices) task));
@@ -328,6 +328,9 @@ public class BLEHandler extends ConnectionHandler {
         connectingPeripherals.put(device.getAddress(), device);
         device.connectGatt(context, false, gattCallback);
     }
+    private void expireConnectToPeripheral(ConnectToPeripheral task){
+        connectingPeripherals.remove(task.device.getAddress());
+    }
 
 
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
@@ -359,6 +362,9 @@ public class BLEHandler extends ConnectionHandler {
                 removeIfTwoWayConnected(uuid);
                 connectingPeripherals.remove(address);
                 connectedPeripherals.remove(uuid);
+                if (pendingTask instanceof DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).forgetRetries){
+                    peripheralRetryCount.remove(address);
+                }
 
                 if (avoidConnectingToPeripheral(gatt.getDevice())){
                     Log.d(TAG+CTRL, "skip trying to reconnect to "+name+address);
@@ -465,6 +471,7 @@ public class BLEHandler extends ConnectionHandler {
             Log.d(TAG+CTRL, "Device UUID of " + gatt.getDevice().getName() + " is : " + uuid + "now fully connected!");
             connectingPeripherals.remove(gatt.getDevice().getAddress());
             connectedPeripherals.put(uuid, gatt);
+            peripheralRetryCount.remove(gatt.getDevice().getAddress());
             addIfTwoWayConnected(uuid);
             addToQueue(new WriteCharacteristic(gatt, idCharacteristic, ConvertUUID.uuidToBytes(id), 3));
             addToQueue(new Scan());
@@ -518,6 +525,9 @@ public class BLEHandler extends ConnectionHandler {
         removeIfTwoWayConnected(uuid);
         connectingPeripherals.remove(address);
         connectedPeripherals.remove(uuid);
+        if (task.forgetRetries){
+            peripheralRetryCount.remove(address);
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -563,7 +573,7 @@ public class BLEHandler extends ConnectionHandler {
         centralIsOn = false;
         Log.d(TAG+CTRL, "disconnecting to all connected devices:"+ connectedPeripherals.size()+" but has "+connectingPeripherals.size()+" connecting devices");
         for (BluetoothGatt gatt : connectedPeripherals.values()) {
-            addToQueue(new DisconnectPeripheral(gatt));
+            addToQueue(new DisconnectPeripheral(gatt, true));
         }
         if (pendingTask instanceof Scan){
             isScanning = false;

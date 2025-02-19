@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
                     Toast.makeText(that, "BLE enabled", Toast.LENGTH_SHORT).show();
                 }
                 //
-//                bleHandler?.startPeripheral()
+                bleHandler?.startCentral()
             }
 
             override fun onDisabled() {
