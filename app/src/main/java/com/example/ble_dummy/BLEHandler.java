@@ -172,11 +172,7 @@ public class BLEHandler extends ConnectionHandler {
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
             Log.d(TAG+taskTag, "ended task of "+pendingTask.asString());
             pendingTask = null;
-            if (!queue.isEmpty()){
-                startNextTask();
-            }else{
-                Log.d(TAG, "queue is empty, no next task to execute");
-            }
+            startNextTask();
         }
     }
 
@@ -190,9 +186,10 @@ public class BLEHandler extends ConnectionHandler {
 
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
             Log.w(TAG+taskTag, pendingTask.asString()+" Timed out after"+pendingTask.expireMilli+"ms. Moving on to next task");
-            pendingTask = null;
             //In case this is the only task so that a scan task may never be added
             addToQueue(new Scan());
+
+            pendingTask = null;
             startNextTask();
         }, task.expireMilli);
     }
@@ -241,11 +238,8 @@ public class BLEHandler extends ConnectionHandler {
     }
     @SuppressLint("MissingPermission")
     private void expireScan(Scan task){
-        Log.w(TAG+CTRL, "timing out scan after "+task.expireMilli+" milliseconds. adding scan task");
         isScanning = false;
         scanner.stopScan(scanCallback);
-        //In case it needs more time to find devices
-        addToQueue(new Scan(task.devicesBeforeConnect));
     }
 
     private final ScanCallback scanCallback = new ScanCallback() {
