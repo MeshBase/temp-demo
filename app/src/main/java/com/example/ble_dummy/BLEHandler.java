@@ -363,6 +363,7 @@ public class BLEHandler extends ConnectionHandler {
                 if (avoidConnectingToPeripheral(gatt.getDevice())){
                     Log.d(TAG+CTRL, "skip trying to reconnect to "+name+address);
                     gatt.close();
+                    addToQueue(new Scan());
                     if (anticipatedConnect || anticipatedDisconnect) taskEnded();
                     return;
                 }
