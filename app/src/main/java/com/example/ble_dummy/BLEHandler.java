@@ -250,7 +250,11 @@ public class BLEHandler extends ConnectionHandler {
 
             boolean shouldContinue = pendingTask instanceof Scan;
             if (!shouldContinue){
-                Log.w(TAG+CTRL, "current task is not scan, skipping");
+                Log.w(TAG+CTRL, "current task is not scan, skipping. stopping scan");
+                //if not stopped, will never expire nor find devices to connect to
+                isScanning = false;
+                scanner.stopScan(scanCallback);
+                addToQueue(new Scan());
                 return;
             }
 
@@ -375,6 +379,7 @@ public class BLEHandler extends ConnectionHandler {
                 }
 
 
+                Log.d(TAG+CTRL, "Retrying to connect to "+name+address+" "+peripheralRetryCount.getOrDefault(address,-1) + "retries left");
                 addToQueue(new ConnectToPeripheral(gatt.getDevice()));
                 addToQueue(new Scan());
                 if (anticipatedConnect || anticipatedDisconnect) taskEnded();
@@ -751,7 +756,7 @@ public class BLEHandler extends ConnectionHandler {
                 connectedCentrals.remove(uuid);
                 removeIfTwoWayConnected(uuid);
                 addToQueue(new Scan());
-                taskEnded();
+                if (anticipatingDisconnect) taskEnded();
 
             } else {
                 Log.w(TAG+PRFL, "Unknown state: " + newState + " status: "+status);
