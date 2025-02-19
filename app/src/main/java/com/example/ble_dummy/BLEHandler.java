@@ -354,8 +354,8 @@ public class BLEHandler extends ConnectionHandler {
                     return;
                 }
                 Log.d(TAG+CTRL, "Connected (not fully though) to: " + name+address);
-                addToQueue(new DiscoverServices(gatt));
                 notifyDiscovered(null, name, address);
+                addToQueue(new DiscoverServices(gatt));
                 taskEnded();
 
             }else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
@@ -544,6 +544,7 @@ public class BLEHandler extends ConnectionHandler {
 
     @SuppressLint("MissingPermission")
     private void startWritingCharacteristic(WriteCharacteristic task){
+
         task.characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         task.characteristic.setValue(task.data);
         task.gatt.writeCharacteristic(task.characteristic);
@@ -965,20 +966,32 @@ private void startClosingGatt(CloseGatt task){
 
     @Override
     public void send(byte[] data) throws SendError {
-        for (BluetoothGatt gatt: connectedPeripherals.values()){
-            BluetoothGattCharacteristic characteristic = getMessageCharacteristic(gatt);
-            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3));
+        for (Device neighbor: getNeighbourDevices()){
+            send(data, neighbor);
         }
     }
 
+    @SuppressLint("MissingPermission")
     @Override
     public void send(byte[] data, Device neighbor) throws SendError {
+        if (!twoWayConnectedDevices.containsKey(neighbor.uuid)){
+            Log.w(TAG, "wanted to send to "+neighbor.uuid+" but neighbor not connected");
+            return;
+        }
+
         BluetoothGatt gatt = connectedPeripherals.get(neighbor.uuid);
         if (gatt == null){
-            Log.e(TAG, "no peripheral found to send to");
+            Log.w(TAG, "no peripheral found to send to");
             return;
         }
         BluetoothGattCharacteristic characteristic = getMessageCharacteristic(gatt);
         addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3));
+
+        //To make sending the data faster for the user
+        if (pendingTask instanceof Scan){
+            scanner.stopScan(scanCallback);
+            isScanning = false;
+            addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
+        }
     }
 }
