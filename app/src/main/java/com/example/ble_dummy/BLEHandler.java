@@ -233,7 +233,11 @@ public class BLEHandler extends ConnectionHandler {
 
         isScanning = true;
         ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(CommonConstants.SERVICE_UUID)).build();
-        scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), scanCallback);
+        scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) //fast detection
+                .setCallbackType(ScanSettings.CALLBACK_TYPE_FIRST_MATCH) //one call back per device
+                .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE) //detects far away devices
+                .build(), scanCallback);
         lastScanTime = System.currentTimeMillis();
     }
     @SuppressLint("MissingPermission")
