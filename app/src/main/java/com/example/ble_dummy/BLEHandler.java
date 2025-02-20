@@ -80,7 +80,7 @@ public class BLEHandler extends ConnectionHandler {
     private boolean peripheralIsOn = false;
     private final HashMap<String, BluetoothDevice> connectingCentrals = new HashMap<>();
     private final HashMap<UUID, BluetoothDevice> connectedCentrals = new HashMap<>();
-    private final HashSet<String> scanResultAddresses = new HashSet<String>();
+    private final HashSet<String> scanResultAddresses = new HashSet<>();
     private BluetoothLeAdvertiser advertiser;
 
     /////common fields and methods
@@ -398,7 +398,6 @@ public class BLEHandler extends ConnectionHandler {
                 }
 
                 Log.d(TAG+CTRL, "Retrying to connect to "+name+address+" "+peripheralRetryCount.getOrDefault(address,-1) + "retries left");
-//                addToQueue(new ConnectToPeripheral(gatt.getDevice()));
                 addToQueue(new Scan());
                 if (anticipatedConnect || anticipatedDisconnect) taskEnded();
             }else{
@@ -921,8 +920,9 @@ public void stopPeripheral(){
     }
     peripheralIsOn = false;
     if (advertiser != null){
-        Log.w(TAG+PRFL, "advertiser is null, skipping stopping advertising");
         advertiser.stopAdvertising(advertisementCallback);
+    }else{
+        Log.w(TAG+PRFL, "advertiser is null, skipping stopping advertising");
     }
 
     for (BluetoothDevice device: connectingCentrals.values()) {
