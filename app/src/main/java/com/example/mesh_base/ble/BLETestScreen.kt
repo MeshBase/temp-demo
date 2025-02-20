@@ -1,4 +1,6 @@
 package com.example.mesh_base.ble
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -36,20 +38,28 @@ fun BleTestScreen(blePerm: BLEPermissions) {
             { connectedDevices.add(it) },
             { connectedDevices.remove(it) },
             { device ->
-                Toast.makeText(context, "Discovered: ${device.name}", Toast.LENGTH_SHORT).show()
+                Handler(Looper.getMainLooper()).post({
+                    Toast.makeText(context, "Discovered: ${device.name}", Toast.LENGTH_SHORT).show()
+                })
             },
             {
-                Toast.makeText(context, "disconnected", Toast.LENGTH_SHORT).show()
+                Handler(Looper.getMainLooper()).post({
+                    Toast.makeText(context, "disconnected", Toast.LENGTH_SHORT).show()
+                });
             },
             { data, device ->
-                Toast.makeText(
-                    context,
-                    "Received: ${String(data, Charsets.UTF_8)} from ${device.name}",
-                    Toast.LENGTH_SHORT
-                ).show()
+                Handler(Looper.getMainLooper()).post({
+                    Toast.makeText(
+                        context,
+                        "Received: ${String(data, Charsets.UTF_8)} from ${device.name}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                });
             },
             {
-                Toast.makeText(context, "nearby changed", Toast.LENGTH_SHORT).show()
+                Handler(Looper.getMainLooper()).post({
+                    Toast.makeText(context, "now have ${it.size} nearby devices", Toast.LENGTH_SHORT).show()
+                });
             },
             context,
             id
@@ -70,6 +80,8 @@ fun BleTestScreen(blePerm: BLEPermissions) {
                    }
                }
            );
+            blePerm.enable()
+
         }
 
         Scaffold(modifier = Modifier.fillMaxSize()) { padding ->

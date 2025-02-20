@@ -23,7 +23,7 @@ class Scan extends BLETask {
     }
 
     Scan(){
-        this.devicesBeforeConnect = 5;
+        this.devicesBeforeConnect = 3; // half of the 7 ble connections a central can make
         this.expireMilli = MAX_SCAN_DURATION;
     }
 

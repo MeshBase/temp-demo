@@ -976,6 +976,7 @@ private void startClosingGatt(CloseGatt task){
         if (twoWayConnectedDevices.containsKey(uuid)){
             neighborDisconnectedListener.onEvent(twoWayConnectedDevices.get(uuid));
             twoWayConnectedDevices.remove(uuid);
+            nearbyDevicesListener.onEvent(getNearbyDevices());
         }
     }
 
@@ -991,6 +992,7 @@ private void startClosingGatt(CloseGatt task){
     private void notifyDiscovered(String address, String name){
         //TODO: perhaps create another Device class that doesn't have uuid
         neighborDiscoveredListener.onEvent( new BLEDevice(null,name, address ));
+        Log.d(TAG, "notified neighbors");
     }
 
 
