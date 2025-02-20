@@ -366,6 +366,7 @@ public class BLEHandler extends ConnectionHandler {
             }else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
 
                 Log.w(TAG+CTRL, "Disconnected from: " + name + address+" anticipated:"+(anticipatedConnect||anticipatedDisconnect));
+                gatt.close();
                 UUID uuid = getPeripheralUUID(address);
                 removeIfTwoWayConnected(uuid);
                 connectingPeripherals.remove(address);
@@ -376,7 +377,6 @@ public class BLEHandler extends ConnectionHandler {
 
                 if (avoidConnectingToPeripheral(gatt.getDevice())){
                     Log.d(TAG+CTRL, "skip trying to reconnect to "+name+address);
-                    gatt.close();
                     addToQueue(new Scan());
                     if (anticipatedConnect || anticipatedDisconnect) taskEnded();
                     return;
@@ -528,8 +528,10 @@ public class BLEHandler extends ConnectionHandler {
 
        task.gatt.disconnect();
     }
+    @SuppressLint("MissingPermission")
     private void expireDisconnectPeripheral(DisconnectPeripheral task){
         String address  = task.gatt.getDevice().getAddress();
+        task.gatt.close();
         UUID uuid = getPeripheralUUID(address);
         removeIfTwoWayConnected(uuid);
         connectingPeripherals.remove(address);
