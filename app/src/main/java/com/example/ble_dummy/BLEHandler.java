@@ -549,7 +549,10 @@ public class BLEHandler extends ConnectionHandler {
 
     @SuppressLint("MissingPermission")
     private void startDiscoverServices(DiscoverServices task){
-        task.gatt.discoverServices();
+        //in ui thread to prevent waiting for an service discovered callback that was actually dropped somehow. according to https://punchthrough.com/android-ble-guide/
+        new Handler(Looper.getMainLooper()).post(()->{
+            task.gatt.discoverServices();
+        });
     }
     private void expireDiscoverServices(DiscoverServices task){
         addToQueue(new DisconnectPeripheral(task.gatt));
