@@ -493,16 +493,13 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
 
-            Log.d(TAG+CTRL, "Device UUID of " + gatt.getDevice().getName() + " is : " + uuid + "now fully connected!");
-            connectingPeripherals.remove(gatt.getDevice().getAddress());
-            connectedPeripherals.put(uuid, gatt);
-            peripheralRetryCount.remove(gatt.getDevice().getAddress());
-            addIfTwoWayConnected(uuid);
-            addToQueue(new WriteCharacteristic(gatt, idCharacteristic, ConvertUUID.uuidToBytes(id), 3));
+            Log.d(TAG+CTRL, "Device UUID of " + gatt.getDevice().getName() + " is : " + uuid);
+            addToQueue(new WriteCharacteristic(gatt, idCharacteristic, ConvertUUID.uuidToBytes(id), 3, uuid));
             addToQueue(new Scan());
             taskEnded();
         }
 
+        @SuppressLint("MissingPermission")
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
             super.onCharacteristicWrite(gatt, characteristic, status);
@@ -512,6 +509,16 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
             WriteCharacteristic task = (WriteCharacteristic) pendingTask;
+
+            if (status == BluetoothGatt.GATT_SUCCESS && characteristic.getUuid().equals(ID_UUID)){
+                Log.d(TAG+CTRL, gatt.getDevice().getName()+gatt.getDevice().getAddress()+" is now connected fully");
+                connectingPeripherals.remove(gatt.getDevice().getAddress());
+                connectedPeripherals.put(task.uuid, gatt);
+                peripheralRetryCount.remove(gatt.getDevice().getAddress());
+                addIfTwoWayConnected(task.uuid);
+                taskEnded();
+                return;
+            }
 
             if (status == BluetoothGatt.GATT_SUCCESS){
                 Log.d(TAG+CTRL, "sent data "+ Arrays.toString(task.data) +" successfully!");
@@ -526,7 +533,7 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
 
-            addToQueue(new WriteCharacteristic(gatt, characteristic, task.data, task.remainingRetries-1  ));
+            addToQueue(new WriteCharacteristic(gatt, characteristic, task.data, task.remainingRetries-1, task.uuid  ));
             taskEnded();
 
         }
@@ -587,7 +594,7 @@ public class BLEHandler extends ConnectionHandler {
 
     private void expireWritingCharacteristic(WriteCharacteristic task){
         if (task.remainingRetries > 0){
-            addToQueue(new WriteCharacteristic(task.gatt, task.characteristic, task.data, task.remainingRetries - 1));
+            addToQueue(new WriteCharacteristic(task.gatt, task.characteristic, task.data, task.remainingRetries - 1,task.uuid));
         }else{
             addToQueue(new DisconnectPeripheral(task.gatt));
         }
@@ -1045,11 +1052,11 @@ private void startClosingGatt(CloseGatt task){
             scanner.stopScan(scanCallback);
             isScanning = false;
 
-            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3));
+            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3, neighbor.uuid));
             addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
             taskEnded();
         }else{
-            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3));
+            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3, neighbor.uuid));
         }
     }
 }

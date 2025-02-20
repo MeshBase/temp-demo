@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
 
 import java.util.Arrays;
+import java.util.UUID;
 
 public abstract class BLETask {
     public long expireMilli = 5_000L;
@@ -83,13 +84,16 @@ class WriteCharacteristic extends CentralTask {
     byte[] data;
     int remainingRetries;
     BluetoothGattCharacteristic characteristic;
+    //Can be null
+    UUID uuid;
 
-    WriteCharacteristic(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] data, int remainingRetries) {
+    WriteCharacteristic(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] data, int remainingRetries, UUID uuid) {
         this.gatt = gatt;
         this.data = data;
         this.characteristic = characteristic;
         this.remainingRetries = remainingRetries;
         this.expireMilli = 2000;
+        this.uuid = uuid;
     }
 
     @Override
