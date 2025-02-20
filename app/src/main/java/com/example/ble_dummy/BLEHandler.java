@@ -29,8 +29,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
-
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -70,7 +68,6 @@ public class BLEHandler extends ConnectionHandler {
     private  boolean isScanning = false;
     public final Map<String, Integer> peripheralRetryCount = new HashMap<>();
     private static final int MAX_PERIPHERAL_RETRIES = 7;
-    private static final int CONNECT_COUNT_PER_SCAN = 3;
     private static final long SCAN_TIME_GAP = 6_500; //6.5 seconds
     private long lastScanTime = 0;
 
@@ -227,9 +224,7 @@ public class BLEHandler extends ConnectionHandler {
             Log.d(TAG+CTRL, "scanning too early for the 5 scans per 30 seconds rule. re adding task after "+addAfter+" milliseconds");
 
             taskEnded();
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                addToQueue(new Scan(task.devicesBeforeConnect));
-            }, addAfter);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> addToQueue(new Scan(task.devicesBeforeConnect)), addAfter);
 
             return;
         }
@@ -374,7 +369,7 @@ public class BLEHandler extends ConnectionHandler {
                     return;
                 }
                 Log.d(TAG+CTRL, "Connected (not fully though) to: " + name+address);
-                notifyDiscovered(null, name, address);
+                notifyDiscovered( name, address);
                 addToQueue(new DiscoverServices(gatt));
                 taskEnded();
 
@@ -567,9 +562,7 @@ public class BLEHandler extends ConnectionHandler {
     @SuppressLint("MissingPermission")
     private void startDiscoverServices(DiscoverServices task){
         //in ui thread to prevent waiting for an service discovered callback that was actually dropped somehow. according to https://punchthrough.com/android-ble-guide/
-        new Handler(Looper.getMainLooper()).post(()->{
-            task.gatt.discoverServices();
-        });
+        new Handler(Looper.getMainLooper()).post(()-> task.gatt.discoverServices());
     }
     private void expireDiscoverServices(DiscoverServices task){
         addToQueue(new DisconnectPeripheral(task.gatt));
@@ -777,7 +770,7 @@ public class BLEHandler extends ConnectionHandler {
 
                 //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
                 addToQueue(new ConnectCentral(device));
-                notifyDiscovered(null, device.getName(), device.getAddress());
+                notifyDiscovered( device.getName(), device.getAddress());
 
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 if (anticipatingDisconnect){
@@ -991,8 +984,9 @@ private void startClosingGatt(CloseGatt task){
         }
     }
 
-    private void notifyDiscovered(UUID uuid, String address, String name){
-        neighborDiscoveredListener.onEvent( new BLEDevice(uuid,name, address ));
+    private void notifyDiscovered(String address, String name){
+        //TODO: perhaps create another Device class that doesn't have uuid
+        neighborDiscoveredListener.onEvent( new BLEDevice(null,name, address ));
     }
 
 
