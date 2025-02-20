@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -68,7 +69,8 @@ public class BLEHandler extends ConnectionHandler {
     BluetoothLeScanner scanner;
     private  boolean isScanning = false;
     public final Map<String, Integer> peripheralRetryCount = new HashMap<>();
-    private static final int MAX_PERIPHERAL_RETRIES = 5;
+    private static final int MAX_PERIPHERAL_RETRIES = 7;
+    private static final int CONNECT_COUNT_PER_SCAN = 3;
     private static final long SCAN_TIME_GAP = 6_500; //6.5 seconds
     private long lastScanTime = 0;
 
@@ -78,6 +80,7 @@ public class BLEHandler extends ConnectionHandler {
     private boolean peripheralIsOn = false;
     private final HashMap<String, BluetoothDevice> connectingCentrals = new HashMap<>();
     private final HashMap<UUID, BluetoothDevice> connectedCentrals = new HashMap<>();
+    private final HashSet<String> scanResultAddresses = new HashSet<String>();
     private BluetoothLeAdvertiser advertiser;
 
     /////common fields and methods
@@ -231,11 +234,11 @@ public class BLEHandler extends ConnectionHandler {
             return;
         }
 
+        scanResultAddresses.clear();
         isScanning = true;
         ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(CommonConstants.SERVICE_UUID)).build();
         scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) //fast detection
-                .setCallbackType(ScanSettings.CALLBACK_TYPE_FIRST_MATCH) //one call back per device
+                .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
                 .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE) //detects far away devices
                 .build(), scanCallback);
         lastScanTime = System.currentTimeMillis();
@@ -247,6 +250,7 @@ public class BLEHandler extends ConnectionHandler {
     }
 
     private final ScanCallback scanCallback = new ScanCallback() {
+
         @SuppressLint("MissingPermission")
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
@@ -261,6 +265,13 @@ public class BLEHandler extends ConnectionHandler {
                 addToQueue(new Scan());
                 return;
             }
+
+            if (scanResultAddresses.contains(device.getAddress())){
+                Log.d(TAG+CTRL, device.getName()+device.getAddress()+" already in scan addresses, skipping adding connect task");
+                return;
+            }
+            scanResultAddresses.add(device.getAddress());
+
 
             if (avoidConnectingToPeripheral(device)){
                 Log.d(TAG+CTRL, "skipping connecting to"+device.getName()+device.getAddress() );
@@ -291,7 +302,7 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
 
-            Log.d(TAG+CTRL, "scan failed"+errorCode+" adding scan task again");
+            Log.d(TAG+CTRL, "scan failed, code: "+errorCode+" adding scan task again");
             addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
 
             scanner.stopScan(scanCallback);
@@ -695,6 +706,7 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
             Log.d(TAG+PRFL, "Advertisement started successfully");
+            addToQueue(new Scan());
             taskEnded();
         }
 
@@ -709,6 +721,7 @@ public class BLEHandler extends ConnectionHandler {
             }
             Log.d(TAG+PRFL, "Advertisement failed:" + errorCode);
             addToQueue(new CloseGatt());
+            addToQueue(new Scan());
             taskEnded();
         }
     };

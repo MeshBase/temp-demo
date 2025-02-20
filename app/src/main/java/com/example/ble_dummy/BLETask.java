@@ -8,7 +8,7 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import java.util.Arrays;
 
 public abstract class BLETask {
-    public long expireMilli = 3_000L;
+    public long expireMilli = 5_000L;
     public abstract String asString();
 }
 
