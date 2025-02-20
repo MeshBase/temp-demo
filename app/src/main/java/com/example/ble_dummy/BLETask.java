@@ -89,6 +89,7 @@ class WriteCharacteristic extends CentralTask {
         this.data = data;
         this.characteristic = characteristic;
         this.remainingRetries = remainingRetries;
+        this.expireMilli = 2000;
     }
 
     @Override

@@ -689,7 +689,14 @@ public class BLEHandler extends ConnectionHandler {
                 .build();
 
         advertiser = BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser();
-        advertiser.startAdvertising(settings, data, advertisementCallback);
+        try{
+            advertiser.startAdvertising(settings, data, advertisementCallback);
+        }catch (Exception e){
+            advertiser = null;
+            Log.w(TAG+PRFL, "couldn't advertise due to error:"+e);
+            addToQueue(new Advertise());
+            taskEnded();
+        }
     }
     private void expireStartAdvertising(Advertise task){
         Log.d(TAG+PRFL, "advertising expired, closing gatt server");
@@ -913,7 +920,10 @@ public void stopPeripheral(){
         return;
     }
     peripheralIsOn = false;
-    advertiser.stopAdvertising(advertisementCallback);
+    if (advertiser != null){
+        Log.w(TAG+PRFL, "advertiser is null, skipping stopping advertising");
+        advertiser.stopAdvertising(advertisementCallback);
+    }
 
     for (BluetoothDevice device: connectingCentrals.values()) {
         addToQueue(new DisconnectCentral(device));
@@ -1013,10 +1023,10 @@ private void startClosingGatt(CloseGatt task){
     @Override
     public void send(byte[] data, Device neighbor) throws SendError {
         //TODO: handle mtu negotiation
-        if (data.length > 20) {
-            //from https://punchthrough.com/android-ble-guide/
-            throw new SendError("not guaranteed to send more than 20 bytes at a time");
-        }
+//        if (data.length > 20) {
+//            //from https://punchthrough.com/android-ble-guide/
+//            throw new SendError("not guaranteed to send more than 20 bytes at a time");
+//        }
 
         if (!twoWayConnectedDevices.containsKey(neighbor.uuid)){
             Log.w(TAG, "wanted to send to "+neighbor.uuid+" but neighbor not connected");
