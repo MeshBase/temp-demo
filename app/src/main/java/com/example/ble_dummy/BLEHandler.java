@@ -999,6 +999,12 @@ private void startClosingGatt(CloseGatt task){
     @SuppressLint("MissingPermission")
     @Override
     public void send(byte[] data, Device neighbor) throws SendError {
+        //TODO: handle mtu negotiation
+        if (data.length > 20) {
+            //from https://punchthrough.com/android-ble-guide/
+            throw new SendError("not guaranteed to send more than 20 bytes at a time");
+        }
+
         if (!twoWayConnectedDevices.containsKey(neighbor.uuid)){
             Log.w(TAG, "wanted to send to "+neighbor.uuid+" but neighbor not connected");
             return;
