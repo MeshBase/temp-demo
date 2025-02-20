@@ -266,7 +266,11 @@ public class BLEHandler extends ConnectionHandler {
                 Log.d(TAG+CTRL, "skipping connecting to"+device.getName()+device.getAddress() );
                 return;
             }
-            addToQueue(new ConnectToPeripheral(device));
+
+            //Do three attempts per scan so that all retry counts are not used up all at once
+            for (int i = 0; i < 3; i++){
+                addToQueue(new ConnectToPeripheral(device));
+            }
 
             ((Scan) pendingTask).devicesBeforeConnect -= 1;
             int remaining = ((Scan) pendingTask).devicesBeforeConnect;
@@ -365,7 +369,7 @@ public class BLEHandler extends ConnectionHandler {
 
             }else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
 
-                Log.w(TAG+CTRL, "Disconnected from: " + name + address+" anticipated:"+(anticipatedConnect||anticipatedDisconnect));
+                Log.w(TAG+CTRL, "Disconnected from: " + name + address+" anticipated:"+(anticipatedConnect||anticipatedDisconnect)+ ". status:"+status);
                 gatt.close();
                 UUID uuid = getPeripheralUUID(address);
                 removeIfTwoWayConnected(uuid);
@@ -382,11 +386,13 @@ public class BLEHandler extends ConnectionHandler {
                     return;
                 }
 
-
                 Log.d(TAG+CTRL, "Retrying to connect to "+name+address+" "+peripheralRetryCount.getOrDefault(address,-1) + "retries left");
-                addToQueue(new ConnectToPeripheral(gatt.getDevice()));
+//                addToQueue(new ConnectToPeripheral(gatt.getDevice()));
                 addToQueue(new Scan());
                 if (anticipatedConnect || anticipatedDisconnect) taskEnded();
+            }else{
+                Log.d(TAG+CTRL, "unknown connection state "+newState+" , disconnecting");
+                addToQueue(new DisconnectPeripheral(gatt));
             }
 
         }
