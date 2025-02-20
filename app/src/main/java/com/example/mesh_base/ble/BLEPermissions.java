@@ -1,4 +1,4 @@
-package com.example.ble_dummy;
+package com.example.mesh_base.ble;
 
 import static android.Manifest.permission.*;
 import static android.content.Context.LOCATION_SERVICE;
@@ -11,14 +11,12 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.LocationManager;
 import android.os.Build;
 import android.util.Log;
 
 import androidx.activity.ComponentActivity;
-import androidx.activity.result.ActivityResult;
 import androidx.activity.result.ActivityResultCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.IntentSenderRequest;
@@ -39,13 +37,31 @@ import java.util.Map;
 
 public class BLEPermissions {
 
-    private String TAG = "my_BlePermissions";
+    private final String TAG = "my_BlePermissions";
 
-    private ComponentActivity activity;
-    private BLEPermissionListener listener;
+    private final ComponentActivity activity;
+    private final Listener defaultListener=
+            new Listener(){
+        @Override
+        public void onEnabled() {
+            Log.d(TAG, "BLE enabled (listener not set yet)");
+        }
+
+        @Override
+        public void onDisabled() {
+            Log.d(TAG, "BLE disabled (listener not set yet)");
+        }
+    };
+
+    private Listener listener = defaultListener;
 
     ActivityResultLauncher<String[]> permissionLauncher;
     ActivityResultLauncher<IntentSenderRequest> locationLauncher;
+
+    public interface Listener{
+        void onEnabled();
+        void onDisabled();
+    }
 
     ActivityResultCallback<Map<String, Boolean>> permissionsCallback = new ActivityResultCallback<>() {
         @Override
@@ -105,9 +121,8 @@ public class BLEPermissions {
         }
     };
 
-    BLEPermissions(ComponentActivity activity, BLEPermissionListener listener) {
+    public  BLEPermissions(ComponentActivity activity) {
         this.activity = activity;
-        this.listener = listener;
 
         //setup permissions
         permissionLauncher = activity.registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), permissionsCallback);
@@ -127,8 +142,14 @@ public class BLEPermissions {
         activity.registerReceiver(locationCallback, locationFilter);
     }
 
+    public void setListener(Listener listener) {
+        this.listener = listener;
+    }
 
     public void enable() {
+        if (listener == defaultListener){
+            throw new RuntimeException("please set a listener first before calling enable on BLE Permissions");
+        }
         //TODO: handle permanent denial of permissions
         if (isEnabled()) {
             listener.onEnabled();

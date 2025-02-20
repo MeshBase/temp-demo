@@ -1,23 +1,6 @@
-package com.example.ble_dummy;
-
-import org.junit.BeforeClass;
-import org.junit.Test;
-
-import static org.junit.Assert.*;
-
-import org.junit.Before;
-import org.mockito.ArgumentCaptor;
-import org.mockito.MockedStatic;
-import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
-
-import java.util.ArrayList;
-import java.util.UUID;
+package com.example.mesh_base;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.*;
-
-import android.util.Log;
 
 
 //public class BLEHandlerUnitTest {

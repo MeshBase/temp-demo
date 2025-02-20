@@ -1,4 +1,4 @@
-package com.example.ble_dummy
+package com.example.mesh_base
 
 import org.junit.Test
 

@@ -1,9 +1,9 @@
-package com.example.ble_dummy;
+package com.example.mesh_base.ble;
 
 
-import static com.example.ble_dummy.CommonConstants.ID_UUID;
-import static com.example.ble_dummy.CommonConstants.MESSAGE_UUID;
-import static com.example.ble_dummy.CommonConstants.SERVICE_UUID;
+import static com.example.mesh_base.ble.CommonConstants.ID_UUID;
+import static com.example.mesh_base.ble.CommonConstants.MESSAGE_UUID;
+import static com.example.mesh_base.ble.CommonConstants.SERVICE_UUID;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
@@ -29,6 +29,16 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import com.example.mesh_base.global_interfaces.ConnectionHandler;
+import com.example.mesh_base.global_interfaces.DataListener;
+import com.example.mesh_base.global_interfaces.Device;
+import com.example.mesh_base.global_interfaces.DisconnectedListener;
+import com.example.mesh_base.global_interfaces.NearbyDevicesListener;
+import com.example.mesh_base.global_interfaces.NeighborConnectedListener;
+import com.example.mesh_base.global_interfaces.NeighborDisconnectedListener;
+import com.example.mesh_base.global_interfaces.NeighborDiscoveredListener;
+import com.example.mesh_base.global_interfaces.SendError;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -40,12 +50,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 
-class CommonConstants {
-    public static final UUID SERVICE_UUID = UUID.fromString("0000b81d-0000-1000-8000-00805f9b34fb");
-    public static final UUID MESSAGE_UUID = UUID.fromString("0000beef-0000-1000-8000-00805f9b34fb");
-    public static final UUID ID_UUID = UUID.fromString("b000000f-0000-1000-8000-00805f9b34fb");
-    public  static  final  UUID NOTIF_DESCRIPTOR_UUID = UUID.fromString("00002901-0000-1000-8000-00805f9b34fb" );
-}
 
 public class BLEHandler extends ConnectionHandler {
 

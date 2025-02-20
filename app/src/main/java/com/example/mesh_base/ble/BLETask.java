@@ -1,4 +1,4 @@
-package com.example.ble_dummy;
+package com.example.mesh_base.ble;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;

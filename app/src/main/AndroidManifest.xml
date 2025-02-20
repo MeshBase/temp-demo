@@ -2,21 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!--    old version-->
-<!--    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />-->
-<!--    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />-->
-<!--    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="30" />-->
-<!--    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />-->
-
-    <!--    new version-->
-<!--    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />-->
-<!--    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />-->
-<!--    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />-->
-
-<!--    hope works-->
-<!--    <uses-permission android:name="com.samsung.android.providers.context.permission.WRITE_USE_APP_FEATURE_SURVEY"/>-->
-    <!-- Samsung-specific permissions -->
-<!--    <uses-permission android:name="com.samsung.android.app.telephonyui.permission.SYSTEM_ALERT_WINDOW"/>-->
 
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -34,19 +19,19 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.BLE_Dummy"
+        android:theme="@style/Theme.Mesh_Base"
         tools:targetApi="31">
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.mesh_base.MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
-            android:theme="@style/Theme.BLE_Dummy">
+            android:theme="@style/Theme.Mesh_Base">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
     </application>
 
 </manifest>
