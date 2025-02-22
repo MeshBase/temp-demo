@@ -1,6 +1,7 @@
 package com.example.mesh_base.ble;
 
 
+import static com.example.mesh_base.ble.CommonConstants.CCCD_UUID;
 import static com.example.mesh_base.ble.CommonConstants.ID_UUID;
 import static com.example.mesh_base.ble.CommonConstants.MESSAGE_UUID;
 import static com.example.mesh_base.ble.CommonConstants.SERVICE_UUID;
@@ -11,6 +12,7 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothGattService;
@@ -53,6 +55,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class BLEHandler extends ConnectionHandler {
 
+
     //TODO: use BLE Permissions to notify connected and disconnected
     BLEHandler(NeighborConnectedListener neighborConnectedListener, NeighborDisconnectedListener neighborDisconnectedListener, NeighborDiscoveredListener neighborDiscoveredListener, DisconnectedListener disconnectedListener, DataListener dataListener, NearbyDevicesListener nearbyDevicesListener, Context context, UUID id) {
         super(neighborConnectedListener, neighborDisconnectedListener, neighborDiscoveredListener, disconnectedListener, dataListener, nearbyDevicesListener);
@@ -83,6 +86,7 @@ public class BLEHandler extends ConnectionHandler {
     private final HashMap<UUID, BluetoothDevice> connectedCentrals = new HashMap<>();
     private final HashSet<String> scanResultAddresses = new HashSet<>();
     private BluetoothLeAdvertiser advertiser;
+    private BluetoothGattCharacteristic peripheralMessageCharacteristic;
 
     /////common fields and methods
     private final String TAG = "my_bleHandler";
@@ -90,7 +94,7 @@ public class BLEHandler extends ConnectionHandler {
     private final Context context;
     private final ConcurrentLinkedQueue<BLETask> queue = new ConcurrentLinkedQueue<>();
     private BLETask pendingTask = null;
-    private final HashMap<UUID, BLEDevice> twoWayConnectedDevices = new HashMap<>();
+    private final HashMap<UUID, BLEDevice> connectedDevices = new HashMap<>();
     private void addToQueue (BLETask task){
         synchronized (queue){
             String taskTag = (pendingTask instanceof PeripheralTask)? PRFL: CTRL;
@@ -131,7 +135,10 @@ public class BLEHandler extends ConnectionHandler {
                 }else if (task instanceof DiscoverServices){
                     startDiscoverServices((DiscoverServices) task);
                     expireTask(task, ()->expireDiscoverServices((DiscoverServices) task));
-                }else if (task instanceof ReadCharacteristic){
+                }else if (task instanceof EnableIndication){
+                    startEnablingIndication((EnableIndication) task);
+                    expireTask(task, ()->expireEnablingIndication((EnableIndication) task));
+                } else if (task instanceof ReadCharacteristic){
                     startReadingCharacteristic((ReadCharacteristic) task);
                     expireTask(task, ()->expireReadingCharacteristic((ReadCharacteristic) task));
                 } else if (task instanceof WriteCharacteristic){
@@ -146,13 +153,13 @@ public class BLEHandler extends ConnectionHandler {
                 }else if (task instanceof  Advertise){
                     startAdvertising((Advertise) task);
                     expireTask(task, ()->expireStartAdvertising((Advertise) task));
-                }else if (task instanceof SendResponse){
-                    startSendResponse((SendResponse) task);
-                    expireTask(task, null);
                 } else if (task instanceof ConnectCentral){
                     startConnectCentral((ConnectCentral) task);
                     expireTask(task, null);
-                }else if (task instanceof DisconnectCentral){
+                }else if (task instanceof IndicateCharacteristic){
+                    startIndicateCharacteristic((IndicateCharacteristic) task);
+                    expireTask(task, ()->expireIndicateCharacteristic((IndicateCharacteristic) task));
+                } else if (task instanceof DisconnectCentral){
                     startDisconnectCentral((DisconnectCentral) task);
                     expireTask(task, ()->expireDisconnectCentral((DisconnectCentral) task));
                 }else if (task instanceof CloseGatt){
@@ -320,17 +327,29 @@ public class BLEHandler extends ConnectionHandler {
        }
        return null;
     }
+
+    @SuppressLint("MissingPermission")
     private boolean avoidConnectingToPeripheral(BluetoothDevice device){
         String address = device.getAddress();
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        String name = adapter != null? adapter.getName():"unknown";
+        String otherName = device.getName() == null? "unknown":device.getName();
         int retries = peripheralRetryCount.getOrDefault(address, 0);
+        boolean hasBiggerHash = (name.hashCode() ^ 0x5bf03635) > (otherName.hashCode() ^ 0x5bf03635);
+
+        boolean tooManyRetries = retries > MAX_PERIPHERAL_RETRIES;
         boolean isAlreadyConnecting = connectingPeripherals.containsKey(address);
         boolean isAlreadyConnected = getPeripheralUUID(address) != null;
-        boolean avoid = !centralIsOn || isAlreadyConnecting || retries > MAX_PERIPHERAL_RETRIES || isAlreadyConnected;
+        //To avoid duplicate central-peripheral connection in both directions. XOR so that hashes are more evenly distributed.
+        boolean avoidConViaCentral = hasBiggerHash && centralIsOn && peripheralIsOn;
+
+        boolean avoid = !centralIsOn || isAlreadyConnecting || tooManyRetries || isAlreadyConnected || avoidConViaCentral;
         if (avoid && !isAlreadyConnected) {
             Log.d(TAG+CTRL, "Avoiding connection - "
                     + "centralOff: " + !centralIsOn
                     + ", connecting: " + isAlreadyConnecting
-                    + ", retriesOverMax: " + (retries > MAX_PERIPHERAL_RETRIES));
+                    + ", retriesOverMax: " + (retries > MAX_PERIPHERAL_RETRIES)
+                    + ", avoidConViaCentral: " + avoidConViaCentral);
         }
 
         return avoid;
@@ -382,7 +401,7 @@ public class BLEHandler extends ConnectionHandler {
                 Log.w(TAG+CTRL, "Disconnected from: " + name + address+" anticipated:"+(anticipatedConnect||anticipatedDisconnect)+ ". status:"+status);
                 gatt.close();
                 UUID uuid = getPeripheralUUID(address);
-                removeIfTwoWayConnected(uuid);
+                notifyDisconnect(uuid);
                 connectingPeripherals.remove(address);
                 connectedPeripherals.remove(uuid);
                 if (pendingTask instanceof DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).forgetRetries){
@@ -430,18 +449,52 @@ public class BLEHandler extends ConnectionHandler {
             }
 
             try{
-                //to make sure message characteristic is not null
-                gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(CommonConstants.MESSAGE_UUID);
-                BluetoothGattCharacteristic idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(ID_UUID);
-                addToQueue(new ReadCharacteristic(idCharacteristic, gatt));
+                BluetoothGattCharacteristic messageCharacteristic = gatt.getService(SERVICE_UUID).getCharacteristic(ID_UUID);
+
+                addToQueue(new EnableIndication(messageCharacteristic, gatt));
                 taskEnded();
             }catch (Exception e){
                 //see if any null errors
                 Log.e(TAG+CTRL, "error on discover services"+e);
                 addToQueue(new DisconnectPeripheral(gatt));
                 taskEnded();
-                throw  e;
             }
+        }
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+            super.onDescriptorWrite(gatt, descriptor, status);
+
+            boolean isEnableIndication = pendingTask instanceof EnableIndication;
+            boolean isSameAddress = isEnableIndication && ((EnableIndication) pendingTask).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
+            boolean shouldContinue = isEnableIndication && isSameAddress;
+            if (!shouldContinue){
+                Log.w(TAG+CTRL, "current task is not descriptor writing or not this device, skipping");
+                return;
+            }
+
+            boolean notIndication  = !descriptor.getUuid().equals(CCCD_UUID);
+            boolean centralIsOff = !centralIsOn;
+            if (notIndication ||  centralIsOff) {
+                Log.w(TAG+CTRL, "[on desc write] stopping from fully connecting"+gatt.getDevice().getName()+gatt.getDevice().getAddress()+ "due to notIndication:"+notIndication+" centralIsOff"+centralIsOff);
+                addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
+                return;
+            }
+
+            try{
+                BluetoothGattCharacteristic idCharacteristic = gatt.getService(CommonConstants.SERVICE_UUID).getCharacteristic(ID_UUID);
+                if (idCharacteristic == null) throw new Exception("id characteristic is null");
+                addToQueue(new ReadCharacteristic(idCharacteristic, gatt));
+                addToQueue(new Scan());
+                taskEnded();
+            }catch (Exception e){
+                Log.e(TAG+CTRL, "error on descriptor write"+e);
+                addToQueue(new DisconnectPeripheral(gatt));
+                taskEnded();
+            }
+
         }
 
         @SuppressLint("MissingPermission")
@@ -464,7 +517,7 @@ public class BLEHandler extends ConnectionHandler {
             boolean notId  = !characteristic.getUuid().equals(ID_UUID);
             boolean centralIsOff = !centralIsOn;
             if (notSuccessful || notId || centralIsOff) {
-                Log.w(TAG+CTRL, "stopping from fully connecting"+gatt.getDevice().getName()+gatt.getDevice().getAddress()+ "due to notSuccessful:"+notSuccessful+" notId:"+notId+" centralIsOff"+centralIsOff);
+                Log.w(TAG+CTRL, "[on char read] stopping from fully connecting"+gatt.getDevice().getName()+gatt.getDevice().getAddress()+ "due to notSuccessful:"+notSuccessful+" notId:"+notId+" centralIsOff"+centralIsOff);
                 addToQueue(new DisconnectPeripheral(gatt));
                 taskEnded();
                 return;
@@ -514,7 +567,7 @@ public class BLEHandler extends ConnectionHandler {
                 connectingPeripherals.remove(gatt.getDevice().getAddress());
                 connectedPeripherals.put(task.uuid, gatt);
                 peripheralRetryCount.remove(gatt.getDevice().getAddress());
-                addIfTwoWayConnected(task.uuid);
+                notifyConnect(task.uuid);
                 taskEnded();
                 return;
             }
@@ -532,11 +585,37 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
 
+            Log.d(TAG+PRFL, "retrying writing characteristic");
             addToQueue(new WriteCharacteristic(gatt, characteristic, task.data, task.remainingRetries-1, task.uuid  ));
             taskEnded();
 
         }
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
+            super.onCharacteristicChanged(gatt, characteristic);
+            Log.d(TAG+CTRL, "characteristic changed");
+            BluetoothDevice device = gatt.getDevice();
+
+            if (characteristic.getUuid().equals(MESSAGE_UUID)) {
+                Log.d(TAG+PRFL, "Received data from "+  device.getName()+device.getAddress());
+                UUID uuid = getPeripheralUUID(device.getAddress());
+
+                if (uuid == null){
+                    Log.d(TAG+PRFL, "peripheral sent a message but was not connected"+device.getName()+device.getAddress()+" disconnecting");
+                    addToQueue(new DisconnectPeripheral(gatt));
+                    return;
+                }
+
+                notifyData(uuid, characteristic.getValue());
+            } else {
+                Log.e(TAG+PRFL, "unexpected characteristic was written:"+characteristic.getUuid());
+                addToQueue(new DisconnectCentral(device));
+            }
+        }
     };
+
 
     @SuppressLint("MissingPermission")
     private void startDisconnectPeripheral(DisconnectPeripheral task){
@@ -555,7 +634,7 @@ public class BLEHandler extends ConnectionHandler {
         String address  = task.gatt.getDevice().getAddress();
         task.gatt.close();
         UUID uuid = getPeripheralUUID(address);
-        removeIfTwoWayConnected(uuid);
+        notifyDisconnect(uuid);
         connectingPeripherals.remove(address);
         connectedPeripherals.remove(uuid);
         if (task.forgetRetries){
@@ -578,6 +657,24 @@ public class BLEHandler extends ConnectionHandler {
        task.gatt.readCharacteristic(task.characteristic);
     }
     private void expireReadingCharacteristic(ReadCharacteristic task){
+        addToQueue(new DisconnectPeripheral(task.gatt));
+    }
+
+    @SuppressLint("MissingPermission")
+    private  void startEnablingIndication(EnableIndication task){
+        BluetoothGattDescriptor descriptor =task.characteristic.getDescriptor(CCCD_UUID);
+        boolean success = task.gatt.setCharacteristicNotification(task.characteristic, true);
+        if (!success) {
+            Log.e(TAG+CTRL, "could not set characteristic notification to true");
+            addToQueue(new DisconnectPeripheral(task.gatt));
+            taskEnded();
+            return;
+        }
+
+        descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+        task.gatt.writeDescriptor(descriptor);
+    }
+    private void expireEnablingIndication(EnableIndication task){
         addToQueue(new DisconnectPeripheral(task.gatt));
     }
 
@@ -654,11 +751,19 @@ public class BLEHandler extends ConnectionHandler {
 
         BluetoothGattService service = new BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
-        BluetoothGattCharacteristic messageCharacteristic = new BluetoothGattCharacteristic(
+        peripheralMessageCharacteristic = new BluetoothGattCharacteristic(
                 MESSAGE_UUID,
-                BluetoothGattCharacteristic.PROPERTY_WRITE | BluetoothGattCharacteristic.PROPERTY_READ,
+                BluetoothGattCharacteristic.PROPERTY_WRITE | BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_INDICATE,
                 BluetoothGattCharacteristic.PERMISSION_WRITE | BluetoothGattCharacteristic.PERMISSION_READ
         );
+
+        BluetoothGattDescriptor messageDescriptor = new BluetoothGattDescriptor(
+                CCCD_UUID,
+                BluetoothGattDescriptor.PERMISSION_WRITE | BluetoothGattDescriptor.PERMISSION_READ
+        );
+
+        messageDescriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+        peripheralMessageCharacteristic.addDescriptor(messageDescriptor);
 
         BluetoothGattCharacteristic idCharacteristic = new BluetoothGattCharacteristic(
                 ID_UUID,
@@ -666,7 +771,7 @@ public class BLEHandler extends ConnectionHandler {
                 BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE
         );
 
-        service.addCharacteristic(messageCharacteristic);
+        service.addCharacteristic(peripheralMessageCharacteristic);
         service.addCharacteristic(idCharacteristic);
         gattServer.addService(service);
 
@@ -792,12 +897,28 @@ public class BLEHandler extends ConnectionHandler {
                 UUID uuid = getCentralUUID(address);
                 connectingCentrals.remove(address);
                 connectedCentrals.remove(uuid);
-                removeIfTwoWayConnected(uuid);
+                notifyDisconnect(uuid);
                 addToQueue(new Scan());
                 if (anticipatingDisconnect) taskEnded();
 
             } else {
                 Log.w(TAG+PRFL, "Unknown state: " + newState + " status: "+status);
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+            super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
+            boolean isRequestingIndication = descriptor.getUuid().equals(CCCD_UUID);
+
+            if (peripheralIsOn && isRequestingIndication) {
+                Log.d(TAG+PRFL, "indications write request received from " + device.getName() + ":" + descriptor.getUuid());
+                sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(id));
+            }else{
+                Log.w(TAG+PRFL, "rejecting indication write request from" + device.getName() + ":" + descriptor.getUuid()+ "because didn'tRequestNotification"+!isRequestingIndication+" peripheralIsOff:"+!peripheralIsOn);
+                sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
+                addToQueue(new DisconnectCentral(device));
             }
         }
 
@@ -809,10 +930,10 @@ public class BLEHandler extends ConnectionHandler {
 
             if (peripheralIsOn && isRequestingId) {
                 Log.d(TAG+PRFL, "Id read request received from " + device.getName() + ":" + characteristic.getUuid());
-                addToQueue(new SendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(id)));
+                sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(id));
             }else{
                 Log.w(TAG+PRFL, "rejecting read request from" + device.getName() + ":" + characteristic.getUuid()+ "because didn'tRequestID"+isRequestingId+" peripheralIsOff:"+!peripheralIsOn);
-                addToQueue(new SendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null));
+                sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
                 addToQueue(new DisconnectCentral(device));
             }
         }
@@ -820,8 +941,6 @@ public class BLEHandler extends ConnectionHandler {
         @SuppressLint("MissingPermission")
         @Override
         public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
-            SendResponse successResponse = new SendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
-            SendResponse failResponse = new SendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
 
             if (characteristic.getUuid().equals(MESSAGE_UUID)) {
                 String message = new String(value, StandardCharsets.UTF_8);
@@ -831,12 +950,12 @@ public class BLEHandler extends ConnectionHandler {
                 if (uuid == null){
                     Log.d(TAG+PRFL, "central send a message but was not connected"+device.getName()+device.getAddress()+" disconnecting");
                     addToQueue(new DisconnectCentral(device));
-                    if (responseNeeded) addToQueue(failResponse);
+                    if (responseNeeded) sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
                     return;
                 }
 
-                notifyIfTwoWayConnected(uuid, value);
-                if (responseNeeded) addToQueue(successResponse);
+                notifyData(uuid, value);
+                if (responseNeeded) sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
 
             } else if (characteristic.getUuid().equals(ID_UUID)){
                 UUID otherId;
@@ -845,28 +964,58 @@ public class BLEHandler extends ConnectionHandler {
                 }catch (Exception e){
                     Log.d(TAG+PRFL, "couldn't parse uuid from central"+device.getName()+device.getAddress()+" where value is"+ Arrays.toString(value));
                     addToQueue(new DisconnectCentral(device));
-                    if (responseNeeded) addToQueue(failResponse);
+                    if (responseNeeded) sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
                     return;
                 }
 
                 if (connectedCentrals.containsKey(otherId)){
                     Log.d(TAG+PRFL, "central attempted connecting twice "+device.getName()+device.getAddress()+" with uuid"+otherId+", disconnecting");
                     addToQueue(new DisconnectCentral(device));
-                    if (responseNeeded) addToQueue(failResponse);
+                    if (responseNeeded) sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
                     return;
                 }
 
                 connectedCentrals.put(otherId, device);
                 connectingCentrals.remove(device.getAddress());
-                addIfTwoWayConnected(otherId);
+                notifyConnect(otherId);
                 addToQueue(new Scan());
-                if (responseNeeded) addToQueue(successResponse);
+                if (responseNeeded) sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
 
             } else{
                 Log.e(TAG+PRFL, "unexpected characteristic was written:"+characteristic.getUuid());
                 addToQueue(new DisconnectCentral(device));
-                if (responseNeeded) addToQueue(failResponse);
+                if (responseNeeded) sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
             }
+        }
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onNotificationSent(BluetoothDevice device, int status) {
+            super.onNotificationSent(device, status);
+
+            boolean shouldContinue = pendingTask instanceof IndicateCharacteristic && ((IndicateCharacteristic) pendingTask).device.getAddress().equals(device.getAddress());
+            if (!shouldContinue){
+                Log.w(TAG+PRFL, "current task is not indication or the address of device does not match, skipping");
+                return;
+            }
+            IndicateCharacteristic task = (IndicateCharacteristic) pendingTask;
+
+            if (status == BluetoothGatt.GATT_SUCCESS){
+                Log.d(TAG+PRFL, "sent data to central"+device.getName()+device.getAddress() +" successfully!");
+                taskEnded();
+                return;
+            }
+
+            if (task.remainingRetries <= 0){
+                Log.d(TAG+PRFL, "could not indicate after retries, stopping");
+                addToQueue(new DisconnectCentral(device));
+                taskEnded();
+                return;
+            }
+
+            Log.d(TAG+PRFL, "retrying indication");
+            addToQueue(new IndicateCharacteristic(  task.remainingRetries-1, task.characteristic, task.value, task.device  ));
+            taskEnded();
         }
     };
 
@@ -879,6 +1028,24 @@ public class BLEHandler extends ConnectionHandler {
         }else{
             gattServer.connect(task.device, false);
             taskEnded();
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void startIndicateCharacteristic(IndicateCharacteristic task){
+        if (task.characteristic == null || gattServer == null){
+            Log.w(TAG+PRFL, "can not indicate message to central"+task.device.getName()+task.device.getAddress()+ " because characteristicIsNull:"+(task.characteristic==null)+" gattServerIsNull"+(gattServer==null));
+            taskEnded();
+        }
+        task.characteristic.setValue(task.value);
+        gattServer.notifyCharacteristicChanged(task.device, task.characteristic, true);
+    }
+
+    private void expireIndicateCharacteristic(IndicateCharacteristic task){
+        if (task.remainingRetries > 0){
+            addToQueue(new IndicateCharacteristic(task.remainingRetries - 1 , task.characteristic, task.value, task.device));
+        }else{
+            addToQueue(new DisconnectCentral(task.device));
         }
     }
 
@@ -900,19 +1067,17 @@ public class BLEHandler extends ConnectionHandler {
     }
     private void expireDisconnectCentral(DisconnectCentral task){
         UUID uuid = getCentralUUID(task.device.getAddress());
-        removeIfTwoWayConnected(uuid);
+        notifyDisconnect(uuid);
         connectingCentrals.remove(task.device.getAddress());
         connectedCentrals.remove(uuid);
     }
 
     @SuppressLint("MissingPermission")
-    private void startSendResponse(SendResponse task){
+    private void sendResponse(BluetoothDevice device, int requestId, int newState, int offset, byte[] data){
         if (gattServer == null){
-            Log.d(TAG+PRFL, "gatt server already closed, skipping disconnecting");
-            taskEnded();
+            Log.d(TAG+PRFL, "gatt server already closed, skipping sending response");
         }else{
-            gattServer.sendResponse(task.device, task.requestId, task.newState, task.offset, task.data);
-            taskEnded();
+            gattServer.sendResponse(device, requestId, newState, offset, data);
         }
     }
 
@@ -954,38 +1119,56 @@ private void startClosingGatt(CloseGatt task){
 
     //// shared methods
     @SuppressLint("MissingPermission")
-    private void addIfTwoWayConnected(UUID uuid){
+    private void notifyConnect(UUID uuid){
         BluetoothDevice peripheral = connectedCentrals.get(uuid);
         BluetoothGatt centralGatt = connectedPeripherals.get(uuid);
         BluetoothDevice central = centralGatt == null? null:centralGatt.getDevice();
 
-        if (peripheral!=null && central!=null && !twoWayConnectedDevices.containsKey(uuid)){
-            String name = "unknown";
-            if (peripheral.getName()!=null)name = peripheral.getName();
-            if (central.getName()!=null)name = central.getName();
-
-            BLEDevice device = new BLEDevice(uuid, name, peripheral.getAddress());
-            twoWayConnectedDevices.put(uuid, device);
-            neighborConnectedListener.onEvent(device);
-            nearbyDevicesListener.onEvent(getNearbyDevices());
+        if (central == null && peripheral == null){
+            Log.w(TAG, "connected device "+uuid+" not found in centrals or peripherals!");
+            return;
         }
+
+
+        String name = "unk";
+        String address="unk";
+        if (peripheral != null){
+            address = peripheral.getAddress();
+            if (peripheral.getName() != null){
+                name = peripheral.getName();
+            }else{
+                name = "Unknown-Peripheral-"+uuid.toString().substring(0,5);
+            }
+        }else {
+            address = central.getAddress();
+            if (central.getName() != null){
+                name = central.getName();
+            }else{
+                name = "Unknown-Central-"+uuid.toString().substring(0,5);
+            }
+        }
+
+        BLEDevice device = new BLEDevice(uuid, name, address);
+        connectedDevices.put(uuid, device);
+        neighborConnectedListener.onEvent(device);
+        nearbyDevicesListener.onEvent(getNearbyDevices());
     }
 
-    private void removeIfTwoWayConnected(UUID uuid){
+    private void notifyDisconnect(UUID uuid){
         if (uuid == null) return;
-        if (twoWayConnectedDevices.containsKey(uuid)){
-            neighborDisconnectedListener.onEvent(twoWayConnectedDevices.get(uuid));
-            twoWayConnectedDevices.remove(uuid);
-            nearbyDevicesListener.onEvent(getNearbyDevices());
-        }
+        if (!connectedDevices.containsKey(uuid))return;
+
+        neighborDisconnectedListener.onEvent(connectedDevices.get(uuid));
+        connectedDevices.remove(uuid);
+        nearbyDevicesListener.onEvent(getNearbyDevices());
     }
 
-    private void notifyIfTwoWayConnected(UUID uuid, byte[] data){
-        if (twoWayConnectedDevices.containsKey(uuid)){
-            BLEDevice device = twoWayConnectedDevices.get(uuid);
+    private void notifyData(UUID uuid, byte[] data){
+        if (connectedDevices.containsKey(uuid)){
+            BLEDevice device = connectedDevices.get(uuid);
             dataListener.onEvent(data, device);
         }else{
-            Log.w(TAG, "wanted to notify onData() but "+uuid+" is not two way connected");
+            Log.w(TAG, "wanted to notify onData() but "+uuid+" is not connected");
         }
     }
 
@@ -999,7 +1182,7 @@ private void startClosingGatt(CloseGatt task){
     /////public methods
     @Override
     public ArrayList<Device> getNeighbourDevices() {
-        return new ArrayList<>(twoWayConnectedDevices.values());
+        return new ArrayList<>(connectedDevices.values());
     }
 
     @Override
@@ -1035,28 +1218,32 @@ private void startClosingGatt(CloseGatt task){
 //            throw new SendError("not guaranteed to send more than 20 bytes at a time");
 //        }
 
-        if (!twoWayConnectedDevices.containsKey(neighbor.uuid)){
+        if (!connectedDevices.containsKey(neighbor.uuid)){
             Log.w(TAG, "wanted to send to "+neighbor.uuid+" but neighbor not connected");
             return;
         }
 
         BluetoothGatt gatt = connectedPeripherals.get(neighbor.uuid);
-        if (gatt == null){
-            Log.w(TAG, "no peripheral found to send to");
+        BluetoothDevice centralDevice = connectedCentrals.get(neighbor.uuid);
+        if (gatt == null && centralDevice == null){
+            Log.w(TAG, "device exists, but not found in connectedCentrals nor connectedPeripherals!"+neighbor.name+ neighbor.uuid);
             return;
         }
-        BluetoothGattCharacteristic characteristic = getMessageCharacteristic(gatt);
 
-        if (pendingTask instanceof Scan){
-            Log.d(TAG+CTRL, "ending scan to write quickly");
+        if (gatt != null){
+            BluetoothGattCharacteristic characteristic = getMessageCharacteristic(gatt);
+            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3, neighbor.uuid));
+        }else {
+            addToQueue(new IndicateCharacteristic(3, peripheralMessageCharacteristic, data, centralDevice));
+        }
+
+        if (pendingTask instanceof Scan) {
+            Log.d(TAG + CTRL, "ending scan to write quickly");
             scanner.stopScan(scanCallback);
             isScanning = false;
 
-            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3, neighbor.uuid));
             addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
             taskEnded();
-        }else{
-            addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3, neighbor.uuid));
         }
     }
 }

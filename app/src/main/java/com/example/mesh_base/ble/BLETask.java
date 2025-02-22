@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 
 import java.util.Arrays;
 import java.util.UUID;
@@ -23,7 +24,7 @@ class Scan extends BLETask {
     }
 
     Scan(){
-        this.devicesBeforeConnect = 3; // half of the 7 ble connections a central can make
+        this.devicesBeforeConnect = 2; //for less wait time in sparsely populated places
         this.expireMilli = MAX_SCAN_DURATION;
     }
 
@@ -74,17 +75,34 @@ class ReadCharacteristic extends CentralTask{
         this.gatt = gatt;
     }
 
+    @SuppressLint("MissingPermission")
     @Override
     public String asString() {
-        return "read characteristic - "+characteristic.getUuid();
+        return "read characteristic - "+characteristic.getUuid()+" device:"+gatt.getDevice().getName()+gatt.getDevice().getAddress();
     }
+}
+
+
+class EnableIndication extends CentralTask{
+    BluetoothGattCharacteristic characteristic;
+    BluetoothGatt gatt;
+    EnableIndication( BluetoothGattCharacteristic characteristic , BluetoothGatt gatt){
+        this.characteristic = characteristic;
+        this.gatt = gatt;
+    }
+
+    @SuppressLint("MissingPermission")
+    @Override
+    public String asString() {
+        return "Enable Indication - "+characteristic.getUuid()+" device:"+gatt.getDevice().getName()+gatt.getDevice().getAddress();
+    }
+
 }
 class WriteCharacteristic extends CentralTask {
     BluetoothGatt gatt;
     byte[] data;
     int remainingRetries;
     BluetoothGattCharacteristic characteristic;
-    //Can be null
     UUID uuid;
 
     WriteCharacteristic(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] data, int remainingRetries, UUID uuid) {
@@ -168,28 +186,24 @@ class ConnectCentral extends PeripheralTask {
     }
 }
 
-class SendResponse extends PeripheralTask {
+
+class IndicateCharacteristic extends PeripheralTask{
+
+    int remainingRetries;
+    byte[] value;
     BluetoothDevice device;
-    int requestId;
-    int newState;
-    int offset;
-    byte[] data;
-
-    SendResponse(BluetoothDevice device, int requestId, int newState, int offset, byte[] data) {
+    BluetoothGattCharacteristic characteristic;
+    IndicateCharacteristic(int remainingRetries,BluetoothGattCharacteristic characteristic, byte[] value, BluetoothDevice device){
+        this.remainingRetries = remainingRetries;
+        this.characteristic = characteristic;
+        this.value = value;
         this.device = device;
-        this.requestId = requestId;
-        this.newState = newState;
-        this.offset = offset;
-        this.data = data;
+        this.expireMilli = 2000L;
     }
-
     @Override
     public String asString() {
-        @SuppressLint("MissingPermission") String deviceName = (device.getName() != null) ? device.getName() : "Unknown";
-        return "SendWriteResponse: device = " + deviceName
-                + " (" + device.getAddress() + "), requestId = " + requestId
-                + ", newState = " + newState + ", offset = " + offset
-                + ", data = " + Arrays.toString(data);
+        return "IndicateCharacteristic, retries:"+remainingRetries;
+
     }
 }
 
