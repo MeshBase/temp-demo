@@ -481,7 +481,7 @@ public class BLEHandler extends ConnectionHandler {
 
             Log.d(TAG+CTRL, "new mtu value is "+mtu);
             try{
-                BluetoothGattCharacteristic messageCharacteristic = gatt.getService(SERVICE_UUID).getCharacteristic(ID_UUID);
+                BluetoothGattCharacteristic messageCharacteristic = gatt.getService(SERVICE_UUID).getCharacteristic(MESSAGE_UUID);
                 addToQueue(new EnableIndication(messageCharacteristic, gatt));
                 taskEnded();
             }catch (Exception e){
@@ -801,7 +801,6 @@ public class BLEHandler extends ConnectionHandler {
                 BluetoothGattDescriptor.PERMISSION_WRITE | BluetoothGattDescriptor.PERMISSION_READ
         );
 
-        peripheralMessageDescriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
         peripheralMessageCharacteristic.addDescriptor(peripheralMessageDescriptor);
 
         BluetoothGattCharacteristic idCharacteristic = new BluetoothGattCharacteristic(
@@ -968,12 +967,14 @@ public class BLEHandler extends ConnectionHandler {
         public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
             super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
             boolean isRequestingIndication = descriptor.getUuid().equals(CCCD_UUID);
+            boolean isEnable = Arrays.equals(value, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
 
-            if (peripheralIsOn && isRequestingIndication) {
+            if (peripheralIsOn && isRequestingIndication && isEnable) {
                 Log.d(TAG+PRFL, "indications write request received from " + device.getName() + ":" + descriptor.getUuid());
-                sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, ConvertUUID.uuidToBytes(id));
+                descriptor.setValue(value);
+                sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
             }else{
-                Log.w(TAG+PRFL, "rejecting indication write request from" + device.getName() + ":" + descriptor.getUuid()+ "because didn'tRequestNotification"+!isRequestingIndication+" peripheralIsOff:"+!peripheralIsOn);
+                Log.w(TAG+PRFL, "rejecting indication write request from" + device.getName() + ":" + descriptor.getUuid()+ "because didn'tRequestNotification"+!isRequestingIndication+" peripheralIsOff:"+!peripheralIsOn + "notIsEnable"+!isEnable);
                 sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
                 addToQueue(new DisconnectCentral(device));
             }
