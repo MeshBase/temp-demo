@@ -82,6 +82,22 @@ class ReadCharacteristic extends CentralTask{
     }
 }
 
+class NegotiateMTU extends  CentralTask{
+
+    BluetoothGatt gatt;
+    int size;
+    NegotiateMTU(BluetoothGatt gatt, int size){
+        this.gatt = gatt;
+        this.size = size;
+        this.expireMilli = 2000L;
+    }
+
+    @SuppressLint("MissingPermission")
+    @Override
+    public String asString() {
+        return "Negotiate MTU: "+ gatt.getDevice().getName()+gatt.getDevice().getAddress() + " size:"+size;
+    }
+}
 
 class EnableIndication extends CentralTask{
     BluetoothGattCharacteristic characteristic;
