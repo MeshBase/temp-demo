@@ -592,12 +592,20 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
             WriteCharacteristic task = (WriteCharacteristic) pendingTask;
+            String name = task.gatt.getDevice().getName();
+            String address = task.gatt.getDevice().getAddress();
+
+            if (status == BluetoothGatt.GATT_SUCCESS && connectedExists(task.uuid)){
+                Log.d(TAG+CTRL, "device "+name+address+" is already connected, disconnecting");
+                addToQueue(new DisconnectPeripheral(gatt));
+                return;
+            }
 
             if (status == BluetoothGatt.GATT_SUCCESS && characteristic.getUuid().equals(ID_UUID)){
-                Log.d(TAG+CTRL, gatt.getDevice().getName()+gatt.getDevice().getAddress()+" is now connected fully");
-                connectingPeripherals.remove(gatt.getDevice().getAddress());
+                Log.d(TAG+CTRL, name+address+" is now connected fully!");
+                connectingPeripherals.remove(address);
                 connectedPeripherals.put(task.uuid, gatt);
-                peripheralRetryCount.remove(gatt.getDevice().getAddress());
+                peripheralRetryCount.remove(address);
                 notifyConnect(task.uuid);
                 taskEnded();
                 return;
@@ -1026,8 +1034,8 @@ public class BLEHandler extends ConnectionHandler {
                     return;
                 }
 
-                if (connectedCentrals.containsKey(otherId)){
-                    Log.d(TAG+PRFL, "central attempted connecting twice "+device.getName()+device.getAddress()+" with uuid"+otherId+", disconnecting");
+                if (connectedExists(otherId)){
+                    Log.d(TAG+PRFL, "central is already connected "+device.getName()+device.getAddress()+" with uuid"+otherId+", disconnecting");
                     addToQueue(new DisconnectCentral(device));
                     if (responseNeeded) sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null);
                     return;
@@ -1177,6 +1185,9 @@ private void startClosingGatt(CloseGatt task){
 }
 
     //// shared methods
+    private boolean connectedExists(UUID uuid){
+        return connectedDevices.containsKey(uuid);
+    }
     @SuppressLint("MissingPermission")
     private void notifyConnect(UUID uuid){
         BluetoothDevice peripheral = connectedCentrals.get(uuid);

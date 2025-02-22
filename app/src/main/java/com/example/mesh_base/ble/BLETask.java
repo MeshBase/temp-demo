@@ -10,7 +10,7 @@ import java.util.Arrays;
 import java.util.UUID;
 
 public abstract class BLETask {
-    public long expireMilli = 5_000L;
+    public long expireMilli = 10_000L;
     public abstract String asString();
 }
 
