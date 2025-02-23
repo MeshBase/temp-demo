@@ -834,7 +834,7 @@ public class BLEHandler extends ConnectionHandler {
             return;
         }
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
-//                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
                 .setConnectable(true)
                 .setTimeout(0)
                 .build();
