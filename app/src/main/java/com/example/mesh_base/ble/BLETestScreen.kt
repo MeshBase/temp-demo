@@ -70,7 +70,7 @@ fun BleTestScreen(blePerm: BLEPermissions) {
                object : BLEPermissions.Listener {
                    override fun onEnabled() {
                        Toast.makeText(context, "BLE enabled", Toast.LENGTH_SHORT).show()
-//                       bleHandler.startCentral()
+                       bleHandler.startCentral()
                        bleHandler.startPeripheral()
                    }
                    override fun onDisabled() {
