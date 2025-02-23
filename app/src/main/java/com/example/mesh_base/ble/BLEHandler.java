@@ -407,6 +407,7 @@ public class BLEHandler extends ConnectionHandler {
 
 
                 if (pendingTask instanceof DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).forgetRetries){
+                    Log.d(TAG+CTRL, "forgetting retry count of "+name+address);
                     peripheralConnectTryCount.remove(address);
                 }
 
@@ -755,6 +756,8 @@ public class BLEHandler extends ConnectionHandler {
         for (BluetoothGatt gatt : connectedPeripherals.values()) {
             addToQueue(new DisconnectPeripheral(gatt, true, false));
         }
+        //so that max retry devices have a chance to try connecting again
+        peripheralConnectTryCount.clear();
         if (pendingTask instanceof Scan){
             isScanning = false;
             scanner.stopScan(scanCallback);
@@ -933,7 +936,7 @@ public class BLEHandler extends ConnectionHandler {
                 if (anticipatingDisconnect){
                     Log.d(TAG+PRFL, "anticipated disconnect of "+name+address+" is successful");
                     if (((DisconnectPeripheral) pendingTask).forgetRetries){
-                        Log.d(TAG+PRFL, "removing retry counts for "+name+address);
+                        Log.d(TAG+PRFL, ">>>>>>  removing retry counts for "+name+address);
                         peripheralConnectTryCount.remove(address);
                     }
                 }
