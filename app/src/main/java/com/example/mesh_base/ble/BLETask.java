@@ -142,16 +142,16 @@ class WriteCharacteristic extends CentralTask {
 
 class DisconnectPeripheral extends CentralTask {
     BluetoothGatt gatt;
-    boolean forgetRetries;
+    boolean forgetRetries = false;
+    boolean tryReconnect = true;
 
     DisconnectPeripheral(BluetoothGatt gatt) {
         this.gatt = gatt;
-        this.forgetRetries = false;
     }
-    DisconnectPeripheral(BluetoothGatt gatt,  boolean forgetRetries) {
+    DisconnectPeripheral(BluetoothGatt gatt,  boolean forgetRetries, boolean tryReconnect) {
         this.gatt = gatt;
         this.forgetRetries = forgetRetries;
-
+        this.tryReconnect = tryReconnect;
     }
 
     @Override
