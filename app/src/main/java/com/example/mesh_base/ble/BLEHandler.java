@@ -154,7 +154,7 @@ public class BLEHandler extends ConnectionHandler {
                     expireTask(task, ()->expireDisconnectPeripheral((DisconnectPeripheral) task));
                 }else if (task instanceof StartGattServer){
                     startGattServer((StartGattServer) task);
-                    expireTask(task, null);
+                    expireTask(task, ()->expireStartGattServer((StartGattServer) task));
                 }else if (task instanceof  Advertise){
                     startAdvertising((Advertise) task);
                     expireTask(task, ()->expireStartAdvertising((Advertise) task));
@@ -419,7 +419,7 @@ public class BLEHandler extends ConnectionHandler {
                         int count  = peripheralConnectTryCount.getOrDefault(address, 0);
                         peripheralConnectTryCount.put(address, count + 1);
 
-                        Log.d(TAG+CTRL, "Retrying to connect to "+name+address+" "+ peripheralConnectTryCount.getOrDefault(address,-1) + "retries left");
+                        Log.d(TAG+CTRL, "Retrying to connect to "+name+address+" "+ peripheralConnectTryCount.getOrDefault(address,-1) + "tries done");
                         addToQueue(new ConnectToPeripheral(gatt.getDevice()));
                     }
                 }
@@ -825,14 +825,18 @@ public class BLEHandler extends ConnectionHandler {
         service.addCharacteristic(peripheralMessageCharacteristic);
         service.addCharacteristic(idCharacteristic);
         gattServer.addService(service);
+    }
 
-        addToQueue(new Advertise());
+    private void expireStartGattServer(StartGattServer task){
+        addToQueue(new CloseGatt());
         taskEnded();
     }
+
     @SuppressLint("MissingPermission")
     private void startAdvertising(Advertise task) {
-        if (gattServer == null || !peripheralIsOn){
-            Log.d(TAG+PRFL, "skipping starting advertising due to gatIsNull:"+(gattServer==null) + " peripheralIsOff:"+!peripheralIsOn);
+        boolean alreadyAdvertising = advertiser != null ;
+        if (gattServer == null || !peripheralIsOn || alreadyAdvertising){
+            Log.d(TAG+PRFL, "skipping starting advertising due to gatIsNull:"+(gattServer==null) + " peripheralIsOff:"+!peripheralIsOn + "alreadyAdvertising:"+alreadyAdvertising);
             taskEnded();
             return;
         }
@@ -851,15 +855,20 @@ public class BLEHandler extends ConnectionHandler {
         try{
             advertiser.startAdvertising(settings, data, advertisementCallback);
         }catch (Exception e){
+            Log.w(TAG+PRFL, "couldn't advertise due to error:"+e+", closing gatt");
+            advertiser.stopAdvertising(advertisementCallback);
             advertiser = null;
-            Log.w(TAG+PRFL, "couldn't advertise due to error:"+e);
-            addToQueue(new Advertise());
+            addToQueue(new CloseGatt());
             taskEnded();
         }
     }
+    @SuppressLint("MissingPermission")
     private void expireStartAdvertising(Advertise task){
         Log.d(TAG+PRFL, "advertising expired, closing gatt server");
-       addToQueue(new CloseGatt());
+        advertiser.stopAdvertising(advertisementCallback);
+        advertiser = null;
+        addToQueue(new CloseGatt());
+        taskEnded();
     }
 
     private final AdvertiseCallback advertisementCallback = new AdvertiseCallback() {
@@ -876,6 +885,7 @@ public class BLEHandler extends ConnectionHandler {
             taskEnded();
         }
 
+        @SuppressLint("MissingPermission")
         @Override
         public void onStartFailure(int errorCode) {
             super.onStartFailure(errorCode);
@@ -886,10 +896,17 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
             Log.d(TAG+PRFL, "Advertisement failed:" + errorCode);
+            if (advertiser == null){
+                Log.w(TAG+PRFL, "advertiser was null onStartFailure!, skipping .stopAdvertising");
+            }else{
+                advertiser.stopAdvertising(advertisementCallback);
+                advertiser = null;
+            }
             addToQueue(new CloseGatt());
-            addToQueue(new Scan());
             taskEnded();
         }
+
+
     };
 
     private UUID getCentralUUID(String address){
@@ -903,6 +920,29 @@ public class BLEHandler extends ConnectionHandler {
     }
 
     private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
+
+        @Override
+        public void onServiceAdded(int status, BluetoothGattService service) {
+            super.onServiceAdded(status, service);
+            boolean shouldContinue = pendingTask instanceof StartGattServer;
+            if (!shouldContinue){
+                Log.w(TAG+PRFL, "current task is not start gatt server, skipping");
+                return;
+            }
+
+            boolean isKnownService = service.getUuid().equals(SERVICE_UUID);
+            boolean isSuccessful = status == BluetoothGatt.GATT_SUCCESS;
+
+            if (peripheralIsOn && isKnownService && isSuccessful) {
+                Log.d(TAG+PRFL, "service added successfully"+service.getUuid());
+                addToQueue(new Advertise());
+                taskEnded();
+            }else{
+                Log.w(TAG+PRFL, "cant confirm gatt server started because peripheralOff:"+!peripheralIsOn+" notIsKnownService"+!isKnownService+" notSuccessful:"+(!isSuccessful)+" gattCode:"+status);
+                addToQueue(new CloseGatt());
+                taskEnded();
+            }
+        }
 
         @SuppressLint("MissingPermission")
         @Override
@@ -935,10 +975,6 @@ public class BLEHandler extends ConnectionHandler {
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 if (anticipatingDisconnect){
                     Log.d(TAG+PRFL, "anticipated disconnect of "+name+address+" is successful");
-                    if (((DisconnectPeripheral) pendingTask).forgetRetries){
-                        Log.d(TAG+PRFL, ">>>>>>  removing retry counts for "+name+address);
-                        peripheralConnectTryCount.remove(address);
-                    }
                 }
 
                 if (!exists) {
@@ -1166,6 +1202,7 @@ public void stopPeripheral(){
     peripheralIsOn = false;
     if (advertiser != null){
         advertiser.stopAdvertising(advertisementCallback);
+        advertiser = null;
     }else{
         Log.w(TAG+PRFL, "advertiser is null, skipping stopping advertising");
     }
@@ -1185,11 +1222,19 @@ public void stopPeripheral(){
 private void startClosingGatt(CloseGatt task){
     if (gattServer == null){
         Log.d(TAG+PRFL, "gatt has already been stopped, skipping");
+        addToQueue(new Scan());
         taskEnded();
         return;
     }
+    if (advertiser != null){
+        Log.d(TAG+PRFL, "closing advertiser along with closing gatt");
+        advertiser.stopAdvertising(advertisementCallback);
+        advertiser = null;
+    }
+
     gattServer.close();
     gattServer = null;
+    addToQueue(new Scan());
     taskEnded();
 }
 
