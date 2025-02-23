@@ -73,7 +73,7 @@ public class BLEHandler extends ConnectionHandler {
     private boolean centralIsOn = false;
     BluetoothLeScanner scanner;
     private  boolean isScanning = false;
-    public final Map<String, Integer> peripheralRetryCount = new HashMap<>();
+    public final Map<String, Integer> peripheralConnectTryCount = new HashMap<>();
     private static final int MAX_PERIPHERAL_RETRIES = 7;
     private static final long SCAN_TIME_GAP = 6_500; //6.5 seconds
     private long lastScanTime = 0;
@@ -289,10 +289,7 @@ public class BLEHandler extends ConnectionHandler {
                 return;
             }
 
-            //Do three attempts per scan so that all retry counts are not used up all at once
-            for (int i = 0; i < 3; i++){
-                addToQueue(new ConnectToPeripheral(device));
-            }
+            addToQueue(new ConnectToPeripheral(device));
 
             ((Scan) pendingTask).devicesBeforeConnect -= 1;
             int remaining = ((Scan) pendingTask).devicesBeforeConnect;
@@ -339,7 +336,7 @@ public class BLEHandler extends ConnectionHandler {
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         String name = adapter != null? adapter.getName():"unknown";
         String otherName = device.getName() == null? "unknown":device.getName();
-        int retries = peripheralRetryCount.getOrDefault(address, 0);
+        int retries = peripheralConnectTryCount.getOrDefault(address, 0);
         boolean hasBiggerHash = (name.hashCode() ^ 0x5bf03635) > (otherName.hashCode() ^ 0x5bf03635);
 
         boolean tooManyRetries = retries > MAX_PERIPHERAL_RETRIES;
@@ -369,10 +366,8 @@ public class BLEHandler extends ConnectionHandler {
             return;
         }
 
-        int count  = peripheralRetryCount.getOrDefault(device.getAddress(), 0);
-        peripheralRetryCount.put(device.getAddress(), count + 1);
         connectingPeripherals.put(device.getAddress(), device);
-        device.connectGatt(context, false, gattCallback);
+        device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
     }
     private void expireConnectToPeripheral(ConnectToPeripheral task){
         connectingPeripherals.remove(task.device.getAddress());
@@ -409,18 +404,25 @@ public class BLEHandler extends ConnectionHandler {
                 notifyDisconnect(uuid);
                 connectingPeripherals.remove(address);
                 connectedPeripherals.remove(uuid);
+
+
                 if (pendingTask instanceof DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).forgetRetries){
-                    peripheralRetryCount.remove(address);
+                    peripheralConnectTryCount.remove(address);
                 }
 
-                if (avoidConnectingToPeripheral(gatt.getDevice())){
-                    Log.d(TAG+CTRL, "skip trying to reconnect to "+name+address);
-                    addToQueue(new Scan());
-                    if (anticipatedConnect || anticipatedDisconnect) taskEnded();
-                    return;
+                if (pendingTask instanceof  DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).tryReconnect){
+
+                    if (avoidConnectingToPeripheral(gatt.getDevice())){
+                        Log.d(TAG+CTRL, "skip trying to reconnect to "+name+address);
+                    }else {
+                        int count  = peripheralConnectTryCount.getOrDefault(address, 0);
+                        peripheralConnectTryCount.put(address, count + 1);
+
+                        Log.d(TAG+CTRL, "Retrying to connect to "+name+address+" "+ peripheralConnectTryCount.getOrDefault(address,-1) + "retries left");
+                        addToQueue(new ConnectToPeripheral(gatt.getDevice()));
+                    }
                 }
 
-                Log.d(TAG+CTRL, "Retrying to connect to "+name+address+" "+peripheralRetryCount.getOrDefault(address,-1) + "retries left");
                 addToQueue(new Scan());
                 if (anticipatedConnect || anticipatedDisconnect) taskEnded();
             }else{
@@ -595,9 +597,9 @@ public class BLEHandler extends ConnectionHandler {
             String name = task.gatt.getDevice().getName();
             String address = task.gatt.getDevice().getAddress();
 
-            if (status == BluetoothGatt.GATT_SUCCESS && connectedExists(task.uuid)){
+            if (status == BluetoothGatt.GATT_SUCCESS && characteristic.getUuid().equals(ID_UUID) && connectedExists(task.uuid)){
                 Log.d(TAG+CTRL, "device "+name+address+" is already connected, disconnecting");
-                addToQueue(new DisconnectPeripheral(gatt));
+                addToQueue(new DisconnectPeripheral(gatt, true, false));
                 return;
             }
 
@@ -605,7 +607,7 @@ public class BLEHandler extends ConnectionHandler {
                 Log.d(TAG+CTRL, name+address+" is now connected fully!");
                 connectingPeripherals.remove(address);
                 connectedPeripherals.put(task.uuid, gatt);
-                peripheralRetryCount.remove(address);
+                peripheralConnectTryCount.remove(address);
                 notifyConnect(task.uuid);
                 taskEnded();
                 return;
@@ -677,7 +679,7 @@ public class BLEHandler extends ConnectionHandler {
         connectingPeripherals.remove(address);
         connectedPeripherals.remove(uuid);
         if (task.forgetRetries){
-            peripheralRetryCount.remove(address);
+            peripheralConnectTryCount.remove(address);
         }
     }
     @SuppressLint("MissingPermission")
@@ -751,7 +753,7 @@ public class BLEHandler extends ConnectionHandler {
         centralIsOn = false;
         Log.d(TAG+CTRL, "disconnecting to all connected devices:"+ connectedPeripherals.size()+" but has "+connectingPeripherals.size()+" connecting devices");
         for (BluetoothGatt gatt : connectedPeripherals.values()) {
-            addToQueue(new DisconnectPeripheral(gatt, true));
+            addToQueue(new DisconnectPeripheral(gatt, true, false));
         }
         if (pendingTask instanceof Scan){
             isScanning = false;
@@ -832,9 +834,9 @@ public class BLEHandler extends ConnectionHandler {
             return;
         }
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+//                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
                 .setConnectable(true)
-                .setTimeout(0) // No timeout for Samsung
+                .setTimeout(0)
                 .build();
 
         AdvertiseData data = new AdvertiseData.Builder()
@@ -930,6 +932,10 @@ public class BLEHandler extends ConnectionHandler {
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 if (anticipatingDisconnect){
                     Log.d(TAG+PRFL, "anticipated disconnect of "+name+address+" is successful");
+                    if (((DisconnectPeripheral) pendingTask).forgetRetries){
+                        Log.d(TAG+PRFL, "removing retry counts for "+name+address);
+                        peripheralConnectTryCount.remove(address);
+                    }
                 }
 
                 if (!exists) {
