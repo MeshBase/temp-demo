@@ -301,7 +301,8 @@ public class BLEHandler extends ConnectionHandler {
             }
 
             if (scanResultAddresses.contains(device.getAddress())) {
-                Log.d(TAG + CTRL, device.getName() + device.getAddress() + " already in scan addresses, skipping adding connect task");
+                //Commented, because it overwhelms the logs
+//                Log.d(TAG + CTRL, device.getName() + device.getAddress() + " already in scan addresses, skipping adding connect task");
                 return;
             }
             scanResultAddresses.add(device.getAddress());
