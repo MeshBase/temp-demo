@@ -86,7 +86,7 @@ public class BLEHandler extends ConnectionHandler {
   }
 
   boolean centralIsOn() {
-    return central.centralIsOn;
+    return central.isOn;
   }
 
   private void startNextTask() {
