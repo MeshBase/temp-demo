@@ -248,31 +248,31 @@ public class BLEHandler extends ConnectionHandler {
   }
 
   void startCentral() {
-    central.startCentral();
+    central.start();
   }
 
   void startPeripheral() {
-    peripheral.startPeripheral();
+    peripheral.start();
   }
 
   void stopCentral() {
-    central.stopCentral();
+    central.stop();
   }
 
   void stopPeripheral() {
-    peripheral.stopPeripheral();
+    peripheral.stop();
   }
 
   @Override
   public void start() throws Exception {
-    central.startCentral();
-    peripheral.startPeripheral();
+    central.start();
+    peripheral.start();
   }
 
   @Override
   public void stop() {
-    central.stopCentral();
-    peripheral.stopPeripheral();
+    central.stop();
+    peripheral.stop();
   }
 
   @Override

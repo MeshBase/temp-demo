@@ -77,7 +77,7 @@ public class Peripheral {
     return advertiser;
   }
 
-  public void startPeripheral() {
+  public void start() {
     if (isOn) {
       Log.d(TAG, "is already on");
       return;
@@ -241,7 +241,7 @@ public class Peripheral {
     }
   }
 
-  public void stopPeripheral() {
+  public void stop() {
     if (!isOn) {
       Log.d(TAG, "is already off");
       return;
