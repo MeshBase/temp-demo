@@ -316,14 +316,16 @@ class CentralBLEEventHandler {
   };
 
   CentralBLEEventHandler(Central central) {
-    this.handler = central.handler;
+    this.handler = central.getBLEHandler();
     this.central = central;
     this.TAG = central.TAG;
   }
 
   ScanCallback getScanCallback() {
     return scanCallback;
-  }  private final ScanCallback scanCallback = new ScanCallback() {
+  }
+
+  private final ScanCallback scanCallback = new ScanCallback() {
 
     @Override
     public void onScanResult(int callbackType, ScanResult result) {
@@ -376,8 +378,6 @@ class CentralBLEEventHandler {
   BluetoothGattCallback getGattCallback() {
     return gattCallback;
   }
-
-
 
 
 }

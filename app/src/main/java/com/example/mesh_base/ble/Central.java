@@ -38,9 +38,9 @@ public class Central {
   private final HashMap<String, BluetoothDevice> connectingDevices = new HashMap<>();
   private final Map<UUID, BluetoothGatt> connectedDevices = new HashMap<>();
   private final HashSet<String> scanResultAddresses = new HashSet<>();
-  BluetoothLeScanner scanner;
-  BLEHandler handler;
+  private final BLEHandler handler;
   CentralBLEEventHandler eventHandler;
+  private BluetoothLeScanner scanner;
   private boolean isOn = false;
   private boolean isScanning = false;
   private long lastScanTime = 0;
@@ -151,6 +151,11 @@ public class Central {
   Map<String, Integer> getConnectTryCount() {
     return connectTryCount;
   }
+
+  BLEHandler getBLEHandler() {
+    return handler;
+  }
+
 
   boolean avoidConnectingToPeripheral(BluetoothDevice device) {
     String address = device.getAddress();
