@@ -32,7 +32,6 @@ public class BLEHandler extends ConnectionHandler {
 
   static final String CTRL = "central: ";
   static final String PRFL = "peripheral:";
-  /////common fields and methods
   final String TAG = "my_bleHandler";
   private final UUID id;
   private final Context context;
@@ -49,7 +48,6 @@ public class BLEHandler extends ConnectionHandler {
     this.id = id;
     this.central = new Central(this);
     this.peripheral = new Peripheral(this);
-
   }
 
 
@@ -59,9 +57,7 @@ public class BLEHandler extends ConnectionHandler {
       Log.d(TAG + taskTag, "added task " + task.asString() + " .To a queue of length:" + queue.size());
 
       queue.add(task);
-      if (pendingTask == null) {
-        startNextTask();
-      }
+      if (pendingTask == null) startNextTask();
     }
   }
 
@@ -70,7 +66,7 @@ public class BLEHandler extends ConnectionHandler {
   }
 
   boolean peripheralIsOn() {
-    return peripheral.isOn;
+    return peripheral.getIsOn();
   }
 
   Context getContext() {
@@ -192,8 +188,6 @@ public class BLEHandler extends ConnectionHandler {
     }, task.expireMilli);
   }
 
-
-  //// shared methods
   boolean connectedExists(UUID uuid) {
     return connectedDevices.containsKey(uuid);
   }
@@ -248,7 +242,6 @@ public class BLEHandler extends ConnectionHandler {
   }
 
 
-  /////public methods
   @Override
   public ArrayList<Device> getNeighbourDevices() {
     return new ArrayList<>(connectedDevices.values());
@@ -281,11 +274,6 @@ public class BLEHandler extends ConnectionHandler {
   @SuppressLint("MissingPermission")
   @Override
   public void send(byte[] data, Device neighbor) throws SendError {
-    //TODO: handle mtu negotiation
-//        if (data.length > 20) {
-//            //from https://punchthrough.com/android-ble-guide/
-//            throw new SendError("not guaranteed to send more than 20 bytes at a time");
-//        }
 
     if (!connectedDevices.containsKey(neighbor.uuid)) {
       Log.w(TAG, "wanted to send to " + neighbor.uuid + " but neighbor not connected");
