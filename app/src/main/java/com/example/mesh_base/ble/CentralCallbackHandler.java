@@ -1,353 +1,38 @@
 package com.example.mesh_base.ble;
 
-import static com.example.mesh_base.ble.BLEHandler.CTRL;
 import static com.example.mesh_base.ble.CommonConstants.CCCD_UUID;
 import static com.example.mesh_base.ble.CommonConstants.ID_UUID;
 import static com.example.mesh_base.ble.CommonConstants.MESSAGE_UUID;
 import static com.example.mesh_base.ble.CommonConstants.SERVICE_UUID;
 
 import android.annotation.SuppressLint;
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
-import android.bluetooth.BluetoothGattService;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
-import android.bluetooth.le.ScanSettings;
-import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
 
-
 @SuppressLint("MissingPermission")
-public class BLECentral {
-  private static final int MAX_PERIPHERAL_RETRIES = 7;
-  private static final long SCAN_TIME_GAP = 6_500; //6.5 seconds
-  private static final int MAX_MTU_SIZE = 517;
-  public final Map<String, Integer> connectTryCount = new HashMap<>();
-  private final String TAG;
-  private final HashMap<String, BluetoothDevice> connectingDevices = new HashMap<>();
-  private final Map<UUID, BluetoothGatt> connectedDevices = new HashMap<>();
-  private final HashSet<String> scanResultAddresses = new HashSet<>();
-  boolean isOn = false;
-  BluetoothLeScanner scanner;
+class CentralBLEEventHandler {
   BLEHandler handler;
-  private boolean isScanning = false;
-  private long lastScanTime = 0;
-
-  BLECentral(BLEHandler handler) {
-    this.handler = handler;
-    this.TAG = handler.TAG + CTRL;
-  }
-
-  BluetoothGatt getPeripheral(UUID id) {
-    return connectedDevices.get(id);
-  }
-
-  void startCentral() {
-    isOn = true;
-    //1 device to not make users wait too much for the first connection
-    if (!isScanning) handler.addToQueue(new Scan(1));
-  }
-
-  void startScan(Scan task) {
-    boolean isOnlyTask = handler.getQueue().isEmpty();
-    if (!isOn || isScanning || !isOnlyTask) {
-      Log.d(TAG, "ignoring scan task due to centralIsOff: " + !isOn + " scanning already: " + isScanning + " notOnlyTaskInQueue:" + !isOnlyTask + " (queueSize=" + handler.getQueue().size() + ")");
-      handler.taskEnded();
-      return;
-    }
-
-    if (scanner == null) {
-      BluetoothManager btManager = (BluetoothManager) handler.getContext().getSystemService(Context.BLUETOOTH_SERVICE);
-      if (btManager == null) {
-        Log.e(TAG, "btManager is null, cant scan");
-        handler.taskEnded();
-        return;
-      }
-
-      scanner = btManager.getAdapter().getBluetoothLeScanner();
-      if (scanner == null) {
-        Log.e(TAG + CTRL, "scanner is null, cant scan");
-        handler.taskEnded();
-        return;
-      }
-    }
-
-
-    long timeGap = System.currentTimeMillis() - lastScanTime;
-    if (timeGap < SCAN_TIME_GAP) {
-      long addAfter = SCAN_TIME_GAP - timeGap;
-      Log.d(TAG, "scanning too early for the 5 scans per 30 seconds rule. re adding task after " + addAfter + " milliseconds");
-
-      handler.taskEnded();
-      new Handler(Looper.getMainLooper()).postDelayed(() -> handler.addToQueue(new Scan(task.devicesBeforeConnect)), addAfter);
-
-      return;
-    }
-
-    scanResultAddresses.clear();
-    isScanning = true;
-    ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(CommonConstants.SERVICE_UUID)).build();
-    scanner.startScan(Collections.singletonList(filter), new ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
-            .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE) //detects far away devices
-            .build(), scanCallback);
-    lastScanTime = System.currentTimeMillis();
-  }
-
-
-  void expireScan(Scan task) {
-    stopScan();
-  }
-
-  void stopScan() {
-    isScanning = false;
-    if (scanner == null) {
-      Log.e(TAG + CTRL, "scanner is null, skipping stopping scan");
-    } else {
-      scanner.stopScan(scanCallback);
-    }
-  }
-
-  private UUID getPeripheralUUID(String address) {
-    for (UUID key : connectedDevices.keySet()) {
-      BluetoothGatt gatt = connectedDevices.get(key);
-      assert gatt != null;
-      if (gatt.getDevice().getAddress().equals(address)) {
-        return key;
-      }
-    }
-    return null;
-  }
-
-  private boolean avoidConnectingToPeripheral(BluetoothDevice device) {
-    String address = device.getAddress();
-    BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-    String name = adapter != null ? adapter.getName() : "unknown";
-    String otherName = device.getName() == null ? "unknown" : device.getName();
-    int retries = connectTryCount.getOrDefault(address, 0);
-    boolean hasBiggerHash = (name.hashCode() ^ 0x5bf03635) > (otherName.hashCode() ^ 0x5bf03635);
-
-    boolean tooManyRetries = retries > MAX_PERIPHERAL_RETRIES;
-    boolean isAlreadyConnecting = connectingDevices.containsKey(address);
-    boolean isAlreadyConnected = getPeripheralUUID(address) != null;
-    //To avoid duplicate central-peripheral connection in both directions. XOR so that hashes are more evenly distributed.
-    boolean avoidConViaCentral = hasBiggerHash && isOn && handler.peripheralIsOn();
-
-    boolean avoid = !isOn || isAlreadyConnecting || tooManyRetries || isAlreadyConnected || avoidConViaCentral;
-    if (avoid && !isAlreadyConnected) {
-      Log.d(TAG, "Avoiding connection - "
-              + "centralOff: " + !isOn
-              + ", connecting: " + isAlreadyConnecting
-              + ", retriesOverMax: " + (retries > MAX_PERIPHERAL_RETRIES)
-              + ", avoidConViaCentral: " + avoidConViaCentral);
-    }
-
-    return avoid;
-  }
-
-  void startConnectToPeripheral(ConnectToPeripheral task) {
-    BluetoothDevice device = task.device;
-    if (avoidConnectingToPeripheral(task.device)) {
-      Log.d(TAG, "dropping connecting to" + device.getName());
-      handler.taskEnded();
-      return;
-    }
-
-    connectingDevices.put(device.getAddress(), device);
-    device.connectGatt(handler.getContext(), false, gattCallback, BluetoothDevice.TRANSPORT_LE);
-  }
-
-  void expireConnectToPeripheral(ConnectToPeripheral task) {
-    int count = connectTryCount.getOrDefault(task.device.getAddress(), 0);
-    connectTryCount.put(task.device.getAddress(), count + 1);
-    connectingDevices.remove(task.device.getAddress());
-  }
-
-  void startDisconnectPeripheral(DisconnectPeripheral task) {
-    boolean isConnecting = connectingDevices.containsKey(task.gatt.getDevice().getAddress());
-    boolean isConnected = connectedDevices.containsKey(getPeripheralUUID(task.gatt.getDevice().getAddress()));
-    if (!isConnecting && !isConnected) {
-      Log.d(TAG, "skipping disconnect because" + task.gatt.getDevice().getName() + task.gatt.getDevice().getAddress() + "is already disconnected");
-      handler.taskEnded();
-      return;
-    }
-
-    task.gatt.disconnect();
-  }
-
-  void expireDisconnectPeripheral(DisconnectPeripheral task) {
-    String address = task.gatt.getDevice().getAddress();
-    task.gatt.close();
-    UUID uuid = getPeripheralUUID(address);
-    handler.notifyDisconnect(uuid);
-    connectingDevices.remove(address);
-    connectedDevices.remove(uuid);
-    if (task.forgetRetries) {
-      connectTryCount.remove(address);
-    }
-  }
-
-  void startNegotiateMTU(NegotiateMTU task) {
-    task.gatt.requestMtu(task.size);
-  }
-
-  void expireNegotiateMTU(NegotiateMTU task) {
-    handler.addToQueue(new DisconnectPeripheral(task.gatt));
-  }
-
-  void startDiscoverServices(DiscoverServices task) {
-    //in ui thread to prevent waiting for an service discovered callback that was actually dropped somehow. according to https://punchthrough.com/android-ble-guide/
-    new Handler(Looper.getMainLooper()).post(() -> task.gatt.discoverServices());
-  }
-
-  void expireDiscoverServices(DiscoverServices task) {
-    handler.addToQueue(new DisconnectPeripheral(task.gatt));
-  }
-
-  void startReadingCharacteristic(ReadCharacteristic task) {
-    task.gatt.readCharacteristic(task.characteristic);
-  }
-
-  void expireReadingCharacteristic(ReadCharacteristic task) {
-    handler.addToQueue(new DisconnectPeripheral(task.gatt));
-  }
-
-  void startEnablingIndication(EnableIndication task) {
-    BluetoothGattDescriptor descriptor = task.characteristic.getDescriptor(CCCD_UUID);
-    boolean success = task.gatt.setCharacteristicNotification(task.characteristic, true);
-    if (!success || descriptor == null) {
-      Log.w(TAG, "could not enable indication due to couldSetCharNotification:" + !success + " descriptorIsNull:" + (descriptor == null));
-      handler.addToQueue(new DisconnectPeripheral(task.gatt));
-      handler.taskEnded();
-      return;
-    }
-
-    descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
-    task.gatt.writeDescriptor(descriptor);
-  }
-
-  void expireEnablingIndication(EnableIndication task) {
-    handler.addToQueue(new DisconnectPeripheral(task.gatt));
-  }  private final ScanCallback scanCallback = new ScanCallback() {
-
-    @Override
-    public void onScanResult(int callbackType, ScanResult result) {
-      BluetoothDevice device = result.getDevice();
-
-      boolean shouldContinue = handler.getPending() instanceof Scan;
-      if (!shouldContinue) {
-        Log.w(TAG, "current task is not scan, skipping. stopping scan");
-        stopScan();
-        handler.addToQueue(new Scan());
-        return;
-      }
-
-      if (scanResultAddresses.contains(device.getAddress())) return;
-      scanResultAddresses.add(device.getAddress());
-
-      if (avoidConnectingToPeripheral(device)) {
-        Log.d(TAG, "skipping connecting to" + device.getName() + device.getAddress());
-        return;
-      }
-
-      handler.addToQueue(new ConnectToPeripheral(device));
-
-      ((Scan) handler.getPending()).devicesBeforeConnect -= 1;
-      int remaining = ((Scan) handler.getPending()).devicesBeforeConnect;
-      if (remaining <= 0) {
-        stopScan();
-        handler.taskEnded();
-      }
-    }
-
-    @Override
-    public void onScanFailed(int errorCode) {
-      super.onScanFailed(errorCode);
-      boolean shouldContinue = handler.getPending() instanceof Scan;
-      if (!shouldContinue) {
-        Log.w(TAG, "current task is not scan, skipping handling scan fail");
-        return;
-      }
-
-      Log.d(TAG, "scan failed, code: " + errorCode + " adding scan task again");
-      handler.addToQueue(new Scan(((Scan) handler.getPending()).devicesBeforeConnect));
-
-      stopScan();
-      handler.taskEnded();
-    }
-  };
-
-  void startWritingCharacteristic(WriteCharacteristic task) {
-    task.characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-    task.characteristic.setValue(task.data);
-    task.gatt.writeCharacteristic(task.characteristic);
-  }
-
-  void expireWritingCharacteristic(WriteCharacteristic task) {
-    if (task.remainingRetries > 0) {
-      handler.addToQueue(new WriteCharacteristic(task.gatt, task.characteristic, task.data, task.remainingRetries - 1, task.uuid));
-    } else {
-      handler.addToQueue(new DisconnectPeripheral(task.gatt));
-    }
-  }
-
-  void stopCentral() {
-    if (!isOn) {
-      Log.d(TAG, "already off");
-      return;
-    }
-
-    isOn = false;
-    Log.d(TAG, "disconnecting to all connected devices:" + connectedDevices.size() + " but has " + connectingDevices.size() + " connecting devices");
-    for (BluetoothGatt gatt : connectedDevices.values()) {
-      DisconnectPeripheral task = new DisconnectPeripheral(gatt, true, false);
-      //If bluetooth is off, the onConnectionStateChange may not be called by android. so time out faster
-      task.expireMilli = 1500L;
-      handler.addToQueue(task);
-    }
-    //so that max retry devices have a chance to try connecting again
-    connectTryCount.clear();
-    if (handler.getPending() instanceof Scan) stopScan();
-  }
-
-  BluetoothGattCharacteristic getMessageCharacteristic(BluetoothGatt gatt) {
-    BluetoothGattService service = gatt.getService(SERVICE_UUID);
-    if (service == null) {
-      Log.e(TAG, "service is null when trying to get message char");
-      throw new RuntimeException("service is null when trying to get message char");
-    }
-    BluetoothGattCharacteristic characteristic = service.getCharacteristic(MESSAGE_UUID);
-    if (characteristic == null) {
-      Log.e(TAG, "service is null when trying to get message char");
-      throw new RuntimeException("service is null when trying to get message char");
-    }
-    return characteristic;
-  }
-
-
-
-
+  Central central;
+  String TAG;
   private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
     @Override
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
       String address = gatt.getDevice().getAddress();
       String name = gatt.getDevice().getName();
+      Map<String, BluetoothDevice> connectingDevices = central.getConnectingDevices();
+      Map<UUID, BluetoothGatt> connectedDevices = central.getConnectedDevices();
+      Map<String, Integer> connectTryCount = central.getConnectTryCount();
 
       boolean anticipatedConnect = handler.getPending() instanceof ConnectToPeripheral && ((ConnectToPeripheral) handler.getPending()).device.getAddress().equals(address);
       boolean anticipatedDisconnect = handler.getPending() instanceof DisconnectPeripheral && ((DisconnectPeripheral) handler.getPending()).gatt.getDevice().getAddress().equals(address);
@@ -368,8 +53,9 @@ public class BLECentral {
 
         Log.w(TAG, "Disconnected from: " + name + address + " anticipated:" + (anticipatedConnect || anticipatedDisconnect) + ". status:" + status);
         gatt.close();
-        UUID uuid = getPeripheralUUID(address);
+        UUID uuid = central.getPeripheralUUID(address);
         handler.notifyDisconnect(uuid);
+
         connectingDevices.remove(address);
         connectedDevices.remove(uuid);
 
@@ -381,7 +67,7 @@ public class BLECentral {
 
         if (handler.getPending() instanceof DisconnectPeripheral && ((DisconnectPeripheral) handler.getPending()).tryReconnect) {
 
-          if (avoidConnectingToPeripheral(gatt.getDevice())) {
+          if (central.avoidConnectingToPeripheral(gatt.getDevice())) {
             Log.d(TAG, "skip trying to reconnect to " + name + address);
           } else {
             int count = connectTryCount.getOrDefault(address, 0);
@@ -417,14 +103,14 @@ public class BLECentral {
       }
       Log.d(TAG, "Services discovered for " + gatt.getDevice().getAddress());
 
-      if (!isOn) {
+      if (!central.getIsOn()) {
         Log.d(TAG, "can't continue connection ladder because central is off");
         handler.addToQueue(new DisconnectPeripheral(gatt));
         handler.taskEnded();
         return;
       }
 
-      handler.addToQueue(new NegotiateMTU(gatt, MAX_MTU_SIZE));
+      handler.addToQueue(new NegotiateMTU(gatt, Central.MAX_MTU_SIZE));
       handler.taskEnded();
     }
 
@@ -441,7 +127,7 @@ public class BLECentral {
       }
 
       boolean notSuccess = status != BluetoothGatt.GATT_SUCCESS;
-      boolean centralIsOff = !isOn;
+      boolean centralIsOff = !central.getIsOn();
       if (notSuccess || centralIsOff) {
         Log.w(TAG, "[on mtu changed] stopping from fully connecting" + gatt.getDevice().getName() + gatt.getDevice().getAddress() + "due to notSuccess:" + notSuccess + " centralIsOff" + centralIsOff);
         handler.addToQueue(new DisconnectPeripheral(gatt));
@@ -475,7 +161,7 @@ public class BLECentral {
       }
 
       boolean notIndication = !descriptor.getUuid().equals(CCCD_UUID);
-      boolean centralIsOff = !isOn;
+      boolean centralIsOff = !central.getIsOn();
       if (notIndication || centralIsOff) {
         Log.w(TAG, "[on desc write] stopping from fully connecting" + gatt.getDevice().getName() + gatt.getDevice().getAddress() + "due to notIndication:" + notIndication + " centralIsOff" + centralIsOff);
         handler.addToQueue(new DisconnectPeripheral(gatt));
@@ -501,6 +187,8 @@ public class BLECentral {
     public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
       super.onCharacteristicRead(gatt, characteristic, status);
 
+      Map<UUID, BluetoothGatt> connectedDevices = central.getConnectedDevices();
+
       boolean isReadCharInstance = handler.getPending() instanceof ReadCharacteristic;
       boolean isSameChar = isReadCharInstance && ((ReadCharacteristic) handler.getPending()).characteristic.getUuid().equals(characteristic.getUuid());
       boolean isSameAddress = isReadCharInstance && ((ReadCharacteristic) handler.getPending()).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
@@ -514,7 +202,7 @@ public class BLECentral {
 
       boolean notSuccessful = status != BluetoothGatt.GATT_SUCCESS;
       boolean notId = !characteristic.getUuid().equals(ID_UUID);
-      boolean centralIsOff = !isOn;
+      boolean centralIsOff = !central.getIsOn();
       if (notSuccessful || notId || centralIsOff) {
         Log.w(TAG, "[on char read] stopping from fully connecting" + gatt.getDevice().getName() + gatt.getDevice().getAddress() + "due to notSuccessful:" + notSuccessful + " notId:" + notId + " centralIsOff" + centralIsOff);
         handler.addToQueue(new DisconnectPeripheral(gatt));
@@ -553,6 +241,11 @@ public class BLECentral {
 
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+
+      Map<UUID, BluetoothGatt> connectedDevices = central.getConnectedDevices();
+      Map<String, BluetoothDevice> connectingDevices = central.getConnectingDevices();
+      Map<String, BluetoothDevice> connectTryCount = central.getConnectingDevices();
+
       super.onCharacteristicWrite(gatt, characteristic, status);
       boolean shouldContinue = handler.getPending() instanceof WriteCharacteristic && ((WriteCharacteristic) handler.getPending()).characteristic == characteristic;
       if (!shouldContinue) {
@@ -606,7 +299,7 @@ public class BLECentral {
 
       if (characteristic.getUuid().equals(MESSAGE_UUID)) {
         Log.d(TAG, "Received data from " + device.getName() + device.getAddress());
-        UUID uuid = getPeripheralUUID(device.getAddress());
+        UUID uuid = central.getPeripheralUUID(device.getAddress());
 
         if (uuid == null) {
           Log.d(TAG, "peripheral sent a message but was not connected" + device.getName() + device.getAddress() + " disconnecting");
@@ -621,6 +314,70 @@ public class BLECentral {
       }
     }
   };
+
+  CentralBLEEventHandler(Central central) {
+    this.handler = central.handler;
+    this.central = central;
+    this.TAG = central.TAG;
+  }
+
+  ScanCallback getScanCallback() {
+    return scanCallback;
+  }  private final ScanCallback scanCallback = new ScanCallback() {
+
+    @Override
+    public void onScanResult(int callbackType, ScanResult result) {
+      BluetoothDevice device = result.getDevice();
+      HashSet<String> scanResultAddresses = central.getScanResultAddresses();
+
+      boolean shouldContinue = handler.getPending() instanceof Scan;
+      if (!shouldContinue) {
+        Log.w(TAG, "current task is not scan, skipping. stopping scan");
+        central.stopScan();
+        handler.addToQueue(new Scan());
+        return;
+      }
+
+      if (scanResultAddresses.contains(device.getAddress())) return;
+      scanResultAddresses.add(device.getAddress());
+
+      if (central.avoidConnectingToPeripheral(device)) {
+        Log.d(TAG, "skipping connecting to" + device.getName() + device.getAddress());
+        return;
+      }
+
+      handler.addToQueue(new ConnectToPeripheral(device));
+
+      ((Scan) handler.getPending()).devicesBeforeConnect -= 1;
+      int remaining = ((Scan) handler.getPending()).devicesBeforeConnect;
+      if (remaining <= 0) {
+        central.stopScan();
+        handler.taskEnded();
+      }
+    }
+
+    @Override
+    public void onScanFailed(int errorCode) {
+      super.onScanFailed(errorCode);
+      boolean shouldContinue = handler.getPending() instanceof Scan;
+      if (!shouldContinue) {
+        Log.w(TAG, "current task is not scan, skipping handling scan fail");
+        return;
+      }
+
+      Log.d(TAG, "scan failed, code: " + errorCode + " adding scan task again");
+      handler.addToQueue(new Scan(((Scan) handler.getPending()).devicesBeforeConnect));
+
+      central.stopScan();
+      handler.taskEnded();
+    }
+  };
+
+  BluetoothGattCallback getGattCallback() {
+    return gattCallback;
+  }
+
+
 
 
 }
