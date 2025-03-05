@@ -247,6 +247,22 @@ public class BLEHandler extends ConnectionHandler {
     return new ArrayList<>(connectedDevices.values());
   }
 
+  void startCentral() {
+    central.startCentral();
+  }
+
+  void startPeripheral() {
+    peripheral.startPeripheral();
+  }
+
+  void stopCentral() {
+    central.stopCentral();
+  }
+
+  void stopPeripheral() {
+    peripheral.stopPeripheral();
+  }
+
   @Override
   public void start() throws Exception {
     central.startCentral();
