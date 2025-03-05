@@ -92,6 +92,9 @@ public class BLEHandler extends ConnectionHandler {
         }
     }
 
+    BLETask getPending(){
+        return pendingTask;
+    }
     private void startNextTask() {
         synchronized (queue) {
 
