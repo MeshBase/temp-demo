@@ -95,6 +95,13 @@ public class BLEHandler extends ConnectionHandler {
     BLETask getPending(){
         return pendingTask;
     }
+    boolean peripheralIsOn(){
+        return peripheral.peripheralIsOn;
+    }
+
+    boolean centralIsOn(){
+        return central.centralIsOn;
+    }
     private void startNextTask() {
         synchronized (queue) {
 
