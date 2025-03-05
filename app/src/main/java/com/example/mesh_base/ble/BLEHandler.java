@@ -41,6 +41,7 @@ public class BLEHandler extends ConnectionHandler {
   BLECentral central;
   BLEPeripheral peripheral;
   private BLETask pendingTask = null;
+
   //TODO: use BLE Permissions to notify connected and disconnected
   BLEHandler(NeighborConnectedListener neighborConnectedListener, NeighborDisconnectedListener neighborDisconnectedListener, NeighborDiscoveredListener neighborDiscoveredListener, DisconnectedListener disconnectedListener, DataListener dataListener, NearbyDevicesListener nearbyDevicesListener, Context context, UUID id) {
     super(neighborConnectedListener, neighborDisconnectedListener, neighborDiscoveredListener, disconnectedListener, dataListener, nearbyDevicesListener);
@@ -50,6 +51,7 @@ public class BLEHandler extends ConnectionHandler {
     this.peripheral = new BLEPeripheral(this);
 
   }
+
 
   void addToQueue(BLETask task) {
     synchronized (queue) {
@@ -270,8 +272,8 @@ public class BLEHandler extends ConnectionHandler {
 
   @Override
   public void stop() {
-    stopCentral();
-    stopPeripheral();
+    central.stopCentral();
+    peripheral.stopPeripheral();
   }
 
   @Override
@@ -300,8 +302,8 @@ public class BLEHandler extends ConnectionHandler {
       return;
     }
 
-    BluetoothGatt gatt = connectedPeripherals.get(neighbor.uuid);
-    BluetoothDevice centralDevice = connectedCentrals.get(neighbor.uuid);
+    BluetoothGatt gatt = central.getPeripheral(neighbor.uuid);
+    BluetoothDevice centralDevice = peripheral.connectedCentrals.get(neighbor.uuid);
     if (gatt == null && centralDevice == null) {
       Log.w(TAG, "device exists, but not found in connectedCentrals nor connectedPeripherals!" + neighbor.name + neighbor.uuid);
       return;

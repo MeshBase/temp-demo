@@ -52,6 +52,9 @@ public class BLECentral {
     this.TAG = handler.TAG + CTRL;
   }
 
+  BluetoothGatt getPeripheral(UUID id) {
+    return connectedPeripherals.get(id);
+  }
 
   @SuppressLint("MissingPermission")
   void startCentral() {
@@ -114,12 +117,12 @@ public class BLECentral {
 
 
   @SuppressLint("MissingPermission")
-  private void expireScan(Scan task) {
+  void expireScan(Scan task) {
     stopScan();
   }
 
   @SuppressLint("MissingPermission")
-  private void stopScan() {
+  void stopScan() {
     isScanning = false;
     if (scanner == null) {
       Log.e(TAG + CTRL, "scanner is null, skipping stopping scan");
@@ -167,7 +170,7 @@ public class BLECentral {
   }
 
   @SuppressLint("MissingPermission")
-  private void startConnectToPeripheral(ConnectToPeripheral task) {
+  void startConnectToPeripheral(ConnectToPeripheral task) {
     BluetoothDevice device = task.device;
     if (avoidConnectingToPeripheral(task.device)) {
       Log.d(TAG, "dropping connecting to" + device.getName());
@@ -177,6 +180,12 @@ public class BLECentral {
 
     connectingPeripherals.put(device.getAddress(), device);
     device.connectGatt(handler.getContext(), false, gattCallback, BluetoothDevice.TRANSPORT_LE);
+  }
+
+  void expireConnectToPeripheral(ConnectToPeripheral task) {
+    int count = peripheralConnectTryCount.getOrDefault(task.device.getAddress(), 0);
+    peripheralConnectTryCount.put(task.device.getAddress(), count + 1);
+    connectingPeripherals.remove(task.device.getAddress());
   }  private final ScanCallback scanCallback = new ScanCallback() {
 
     @SuppressLint("MissingPermission")
@@ -237,14 +246,8 @@ public class BLECentral {
 
   ///// central methods (follows sequence of operations as much as possible)
 
-  private void expireConnectToPeripheral(ConnectToPeripheral task) {
-    int count = peripheralConnectTryCount.getOrDefault(task.device.getAddress(), 0);
-    peripheralConnectTryCount.put(task.device.getAddress(), count + 1);
-    connectingPeripherals.remove(task.device.getAddress());
-  }
-
   @SuppressLint("MissingPermission")
-  private void startDisconnectPeripheral(DisconnectPeripheral task) {
+  void startDisconnectPeripheral(DisconnectPeripheral task) {
     boolean isConnecting = connectingPeripherals.containsKey(task.gatt.getDevice().getAddress());
     boolean isConnected = connectedPeripherals.containsKey(getPeripheralUUID(task.gatt.getDevice().getAddress()));
     if (!isConnecting && !isConnected) {
@@ -257,7 +260,7 @@ public class BLECentral {
   }
 
   @SuppressLint("MissingPermission")
-  private void expireDisconnectPeripheral(DisconnectPeripheral task) {
+  void expireDisconnectPeripheral(DisconnectPeripheral task) {
     String address = task.gatt.getDevice().getAddress();
     task.gatt.close();
     UUID uuid = getPeripheralUUID(address);
@@ -270,21 +273,30 @@ public class BLECentral {
   }
 
   @SuppressLint("MissingPermission")
-  private void startNegotiateMTU(NegotiateMTU task) {
+  void startNegotiateMTU(NegotiateMTU task) {
     task.gatt.requestMtu(task.size);
   }
 
-  private void expireNegotiateMTU(NegotiateMTU task) {
+  void expireNegotiateMTU(NegotiateMTU task) {
     handler.addToQueue(new DisconnectPeripheral(task.gatt));
   }
 
   @SuppressLint("MissingPermission")
-  private void startDiscoverServices(DiscoverServices task) {
+  void startDiscoverServices(DiscoverServices task) {
     //in ui thread to prevent waiting for an service discovered callback that was actually dropped somehow. according to https://punchthrough.com/android-ble-guide/
     new Handler(Looper.getMainLooper()).post(() -> task.gatt.discoverServices());
   }
 
-  private void expireDiscoverServices(DiscoverServices task) {
+  void expireDiscoverServices(DiscoverServices task) {
+    handler.addToQueue(new DisconnectPeripheral(task.gatt));
+  }
+
+  @SuppressLint("MissingPermission")
+  void startReadingCharacteristic(ReadCharacteristic task) {
+    task.gatt.readCharacteristic(task.characteristic);
+  }
+
+  void expireReadingCharacteristic(ReadCharacteristic task) {
     handler.addToQueue(new DisconnectPeripheral(task.gatt));
   }  private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
     @SuppressLint("MissingPermission")
@@ -573,16 +585,7 @@ public class BLECentral {
   };
 
   @SuppressLint("MissingPermission")
-  private void startReadingCharacteristic(ReadCharacteristic task) {
-    task.gatt.readCharacteristic(task.characteristic);
-  }
-
-  private void expireReadingCharacteristic(ReadCharacteristic task) {
-    handler.addToQueue(new DisconnectPeripheral(task.gatt));
-  }
-
-  @SuppressLint("MissingPermission")
-  private void startEnablingIndication(EnableIndication task) {
+  void startEnablingIndication(EnableIndication task) {
     BluetoothGattDescriptor descriptor = task.characteristic.getDescriptor(CCCD_UUID);
     boolean success = task.gatt.setCharacteristicNotification(task.characteristic, true);
     if (!success || descriptor == null) {
@@ -596,19 +599,19 @@ public class BLECentral {
     task.gatt.writeDescriptor(descriptor);
   }
 
-  private void expireEnablingIndication(EnableIndication task) {
+  void expireEnablingIndication(EnableIndication task) {
     handler.addToQueue(new DisconnectPeripheral(task.gatt));
   }
 
   @SuppressLint("MissingPermission")
-  private void startWritingCharacteristic(WriteCharacteristic task) {
+  void startWritingCharacteristic(WriteCharacteristic task) {
 
     task.characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
     task.characteristic.setValue(task.data);
     task.gatt.writeCharacteristic(task.characteristic);
   }
 
-  private void expireWritingCharacteristic(WriteCharacteristic task) {
+  void expireWritingCharacteristic(WriteCharacteristic task) {
     if (task.remainingRetries > 0) {
       handler.addToQueue(new WriteCharacteristic(task.gatt, task.characteristic, task.data, task.remainingRetries - 1, task.uuid));
     } else {
@@ -617,7 +620,7 @@ public class BLECentral {
   }
 
   @SuppressLint("MissingPermission")
-  public void stopCentral() {
+  void stopCentral() {
     if (!centralIsOn) {
       Log.d(TAG, "already off");
       return;
@@ -638,7 +641,7 @@ public class BLECentral {
     }
   }
 
-  private BluetoothGattCharacteristic getMessageCharacteristic(BluetoothGatt gatt) {
+  BluetoothGattCharacteristic getMessageCharacteristic(BluetoothGatt gatt) {
     BluetoothGattService service = gatt.getService(SERVICE_UUID);
     if (service == null) {
       Log.e(TAG, "service is null when trying to get message char");
