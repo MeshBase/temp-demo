@@ -109,47 +109,48 @@ public class BLEHandler extends ConnectionHandler {
 
       Log.d(TAG + taskTag, "executing " + task.asString());
       try {
+        //if else instead of switch to conserve lines
         if (task instanceof Scan) {
           central.startScan((Scan) task);
-          expireTask(task, () -> expireScan((Scan) task));
+          expireTask(task, () -> central.expireScan((Scan) task));
         } else if (task instanceof ConnectToPeripheral) {
-          startConnectToPeripheral((ConnectToPeripheral) pendingTask);
-          expireTask(task, () -> expireConnectToPeripheral((ConnectToPeripheral) pendingTask));
+          central.startConnectToPeripheral((ConnectToPeripheral) pendingTask);
+          expireTask(task, () -> central.expireConnectToPeripheral((ConnectToPeripheral) pendingTask));
         } else if (task instanceof DiscoverServices) {
-          startDiscoverServices((DiscoverServices) task);
-          expireTask(task, () -> expireDiscoverServices((DiscoverServices) task));
+          central.startDiscoverServices((DiscoverServices) task);
+          expireTask(task, () -> central.expireDiscoverServices((DiscoverServices) task));
         } else if (task instanceof NegotiateMTU) {
-          startNegotiateMTU((NegotiateMTU) task);
-          expireTask(task, () -> expireNegotiateMTU((NegotiateMTU) task));
+          central.startNegotiateMTU((NegotiateMTU) task);
+          expireTask(task, () -> central.expireNegotiateMTU((NegotiateMTU) task));
         } else if (task instanceof EnableIndication) {
-          startEnablingIndication((EnableIndication) task);
-          expireTask(task, () -> expireEnablingIndication((EnableIndication) task));
+          central.startEnablingIndication((EnableIndication) task);
+          expireTask(task, () -> central.expireEnablingIndication((EnableIndication) task));
         } else if (task instanceof ReadCharacteristic) {
-          startReadingCharacteristic((ReadCharacteristic) task);
-          expireTask(task, () -> expireReadingCharacteristic((ReadCharacteristic) task));
+          central.startReadingCharacteristic((ReadCharacteristic) task);
+          expireTask(task, () -> central.expireReadingCharacteristic((ReadCharacteristic) task));
         } else if (task instanceof WriteCharacteristic) {
-          startWritingCharacteristic((WriteCharacteristic) task);
-          expireTask(task, () -> expireWritingCharacteristic((WriteCharacteristic) task));
+          central.startWritingCharacteristic((WriteCharacteristic) task);
+          expireTask(task, () -> central.expireWritingCharacteristic((WriteCharacteristic) task));
         } else if (task instanceof DisconnectPeripheral) {
-          startDisconnectPeripheral((DisconnectPeripheral) task);
-          expireTask(task, () -> expireDisconnectPeripheral((DisconnectPeripheral) task));
+          central.startDisconnectPeripheral((DisconnectPeripheral) task);
+          expireTask(task, () -> central.expireDisconnectPeripheral((DisconnectPeripheral) task));
         } else if (task instanceof StartGattServer) {
-          startGattServer((StartGattServer) task);
-          expireTask(task, () -> expireStartGattServer((StartGattServer) task));
+          peripheral.startGattServer((StartGattServer) task);
+          expireTask(task, () -> peripheral.expireStartGattServer((StartGattServer) task));
         } else if (task instanceof Advertise) {
-          startAdvertising((Advertise) task);
-          expireTask(task, () -> expireStartAdvertising((Advertise) task));
+          peripheral.startAdvertising((Advertise) task);
+          expireTask(task, () -> peripheral.expireStartAdvertising((Advertise) task));
         } else if (task instanceof ConnectCentral) {
-          startConnectCentral((ConnectCentral) task);
+          peripheral.startConnectCentral((ConnectCentral) task);
           expireTask(task, null);
         } else if (task instanceof IndicateCharacteristic) {
-          startIndicateCharacteristic((IndicateCharacteristic) task);
-          expireTask(task, () -> expireIndicateCharacteristic((IndicateCharacteristic) task));
+          peripheral.startIndicateCharacteristic((IndicateCharacteristic) task);
+          expireTask(task, () -> peripheral.expireIndicateCharacteristic((IndicateCharacteristic) task));
         } else if (task instanceof DisconnectCentral) {
-          startDisconnectCentral((DisconnectCentral) task);
-          expireTask(task, () -> expireDisconnectCentral((DisconnectCentral) task));
+          peripheral.startDisconnectCentral((DisconnectCentral) task);
+          expireTask(task, () -> peripheral.expireDisconnectCentral((DisconnectCentral) task));
         } else if (task instanceof CloseGatt) {
-          startClosingGatt((CloseGatt) task);
+          peripheral.startClosingGatt((CloseGatt) task);
           expireTask(task, null);
         } else {
           Log.e(TAG + taskTag, "unknown task type" + task.asString());

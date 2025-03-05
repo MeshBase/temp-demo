@@ -355,6 +355,16 @@ public class BLEPeripheral {
     advertiser = null;
     addToQueue(new CloseGatt());
     taskEnded();
+  }
+
+  private UUID getCentralUUID(String address) {
+    for (UUID key : connectedCentrals.keySet()) {
+      BluetoothDevice device = connectedCentrals.get(key);
+      if (device != null && device.getAddress().equals(address)) {
+        return key;
+      }
+    }
+    return null;
   }  private final AdvertiseCallback advertisementCallback = new AdvertiseCallback() {
     @Override
     public void onStartSuccess(AdvertiseSettings settingsInEffect) {
@@ -392,16 +402,6 @@ public class BLEPeripheral {
 
 
   };
-
-  private UUID getCentralUUID(String address) {
-    for (UUID key : connectedCentrals.keySet()) {
-      BluetoothDevice device = connectedCentrals.get(key);
-      if (device != null && device.getAddress().equals(address)) {
-        return key;
-      }
-    }
-    return null;
-  }
 
   @SuppressLint("MissingPermission")
   private void startConnectCentral(ConnectCentral task) {
