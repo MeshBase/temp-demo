@@ -208,8 +208,6 @@ public class Peripheral {
   }
 
 
-  ///// peripheral methods (follows sequence of operations as much as possible)
-
   void startDisconnectCentral(DisconnectCentral task) {
     if (server == null) {
       Log.d(TAG, "gatt server already closed, skipping disconnecting");

@@ -25,7 +25,6 @@ class CentralBLEEventHandler {
   BLEHandler handler;
   Central central;
   String TAG;
-
   private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
     @Override
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -328,8 +327,10 @@ class CentralBLEEventHandler {
 
   BluetoothGattCallback getGattCallback() {
     return gattCallback;
-  }  private final ScanCallback scanCallback = new ScanCallback() {
+  }
 
+
+  private final ScanCallback scanCallback = new ScanCallback() {
     @Override
     public void onScanResult(int callbackType, ScanResult result) {
       BluetoothDevice device = result.getDevice();
