@@ -63,7 +63,7 @@ public class Central {
     return isOn;
   }
 
-  void startCentral() {
+  void start() {
     isOn = true;
     //1 device to not make users wait too much for the first connection
     if (!isScanning) handler.addToQueue(new Scan(1));
@@ -283,7 +283,7 @@ public class Central {
     }
   }
 
-  void stopCentral() {
+  void stop() {
     if (!isOn) {
       Log.d(TAG, "already off");
       return;
