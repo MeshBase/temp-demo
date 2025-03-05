@@ -38,8 +38,8 @@ public class BLEHandler extends ConnectionHandler {
   private final Context context;
   private final ConcurrentLinkedQueue<BLETask> queue = new ConcurrentLinkedQueue<>();
   private final HashMap<UUID, BLEDevice> connectedDevices = new HashMap<>();
-  BLECentral central;
-  BLEPeripheral peripheral;
+  Central central;
+  Peripheral peripheral;
   private BLETask pendingTask = null;
 
   //TODO: use BLE Permissions to notify connected and disconnected
@@ -47,8 +47,8 @@ public class BLEHandler extends ConnectionHandler {
     super(neighborConnectedListener, neighborDisconnectedListener, neighborDiscoveredListener, disconnectedListener, dataListener, nearbyDevicesListener);
     this.context = context;
     this.id = id;
-    this.central = new BLECentral(this);
-    this.peripheral = new BLEPeripheral(this);
+    this.central = new Central(this);
+    this.peripheral = new Peripheral(this);
 
   }
 
@@ -86,7 +86,7 @@ public class BLEHandler extends ConnectionHandler {
   }
 
   boolean centralIsOn() {
-    return central.isOn;
+    return central.getIsOn();
   }
 
   private void startNextTask() {

@@ -28,19 +28,18 @@ import java.util.HashMap;
 import java.util.UUID;
 
 @SuppressLint("MissingPermission")
-public class BLEPeripheral {
+public class Peripheral {
   private final HashMap<String, BluetoothDevice> connectingDevices = new HashMap<>();
   private final HashMap<UUID, BluetoothDevice> connectedDevices = new HashMap<>();
   private final String TAG;
   BLEHandler handler;
   boolean isOn = false;
-  /////peripheral fields
   private BluetoothGattServer server;
   private BluetoothLeAdvertiser advertiser;
   private BluetoothGattCharacteristic messageCharacteristic;
   private BluetoothGattDescriptor messageDescriptor;
 
-  BLEPeripheral(BLEHandler handler) {
+  Peripheral(BLEHandler handler) {
     this.handler = handler;
     this.TAG = handler.TAG + BLEHandler.PRFL;
   }
@@ -141,6 +140,27 @@ public class BLEPeripheral {
     advertiser = null;
     handler.addToQueue(new CloseGatt());
     handler.taskEnded();
+  }
+
+  private UUID getCentralUUID(String address) {
+    for (UUID key : connectedDevices.keySet()) {
+      BluetoothDevice device = connectedDevices.get(key);
+      if (device != null && device.getAddress().equals(address)) {
+        return key;
+      }
+    }
+    return null;
+  }
+
+  void startConnectCentral(ConnectCentral task) {
+    //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
+    if (server == null) {
+      Log.d(TAG, "gatt server has been already closed, skipping connecting");
+      handler.taskEnded();
+    } else {
+      server.connect(task.device, false);
+      handler.taskEnded();
+    }
   }  private final BluetoothGattServerCallback serverCallback = new BluetoothGattServerCallback() {
 
     @Override
@@ -357,30 +377,6 @@ public class BLEPeripheral {
     }
   };
 
-  private UUID getCentralUUID(String address) {
-    for (UUID key : connectedDevices.keySet()) {
-      BluetoothDevice device = connectedDevices.get(key);
-      if (device != null && device.getAddress().equals(address)) {
-        return key;
-      }
-    }
-    return null;
-  }
-
-
-  ///// peripheral methods (follows sequence of operations as much as possible)
-
-  void startConnectCentral(ConnectCentral task) {
-    //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
-    if (server == null) {
-      Log.d(TAG, "gatt server has been already closed, skipping connecting");
-      handler.taskEnded();
-    } else {
-      server.connect(task.device, false);
-      handler.taskEnded();
-    }
-  }
-
   void startIndicateCharacteristic(IndicateCharacteristic task) {
     if (task.characteristic == null || server == null) {
       Log.w(TAG, "can not indicate message to central" + task.device.getName() + task.device.getAddress() + " because characteristicIsNull:" + (task.characteristic == null) + " gattServerIsNull" + (server == null));
@@ -390,6 +386,9 @@ public class BLEPeripheral {
     task.characteristic.setValue(task.value);
     server.notifyCharacteristicChanged(task.device, task.characteristic, true);
   }
+
+
+  ///// peripheral methods (follows sequence of operations as much as possible)
 
   void expireIndicateCharacteristic(IndicateCharacteristic task) {
     if (task.remainingRetries > 0) {
