@@ -156,7 +156,7 @@ public class BLECentral {
         public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
 
-            boolean shouldContinue = pendingTask instanceof Scan;
+            boolean shouldContinue = handler.getPending() instanceof Scan;
             if (!shouldContinue) {
                 Log.w(TAG , "current task is not scan, skipping. stopping scan");
                 //if not stopped, will never expire nor find devices to connect to
@@ -180,8 +180,8 @@ public class BLECentral {
 
             addToQueue(new ConnectToPeripheral(device));
 
-            ((Scan) pendingTask).devicesBeforeConnect -= 1;
-            int remaining = ((Scan) pendingTask).devicesBeforeConnect;
+            ((Scan) handler.getPending()).devicesBeforeConnect -= 1;
+            int remaining = ((Scan) handler.getPending()).devicesBeforeConnect;
             if (remaining <= 0) {
                 stopScan();
                 taskEnded();
@@ -192,14 +192,14 @@ public class BLECentral {
         @Override
         public void onScanFailed(int errorCode) {
             super.onScanFailed(errorCode);
-            boolean shouldContinue = pendingTask instanceof Scan;
+            boolean shouldContinue = handler.getPending() instanceof Scan;
             if (!shouldContinue) {
                 Log.w(TAG , "current task is not scan, skipping handling scan fail");
                 return;
             }
 
             Log.d(TAG , "scan failed, code: " + errorCode + " adding scan task again");
-            addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
+            addToQueue(new Scan(((Scan) handler.getPending()).devicesBeforeConnect));
 
             stopScan();
             taskEnded();
@@ -274,8 +274,8 @@ public class BLECentral {
             String address = gatt.getDevice().getAddress();
             String name = gatt.getDevice().getName();
 
-            boolean anticipatedConnect = pendingTask instanceof ConnectToPeripheral && ((ConnectToPeripheral) pendingTask).device.getAddress().equals(address);
-            boolean anticipatedDisconnect = pendingTask instanceof DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).gatt.getDevice().getAddress().equals(address);
+            boolean anticipatedConnect = handler.getPending() instanceof ConnectToPeripheral && ((ConnectToPeripheral) handler.getPending()).device.getAddress().equals(address);
+            boolean anticipatedDisconnect = handler.getPending() instanceof DisconnectPeripheral && ((DisconnectPeripheral) handler.getPending()).gatt.getDevice().getAddress().equals(address);
 
             if (newState == BluetoothGatt.STATE_CONNECTED) {
                 if (!anticipatedConnect) {
@@ -299,12 +299,12 @@ public class BLECentral {
                 connectedPeripherals.remove(uuid);
 
 
-                if (pendingTask instanceof DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).forgetRetries) {
+                if (handler.getPending() instanceof DisconnectPeripheral && ((DisconnectPeripheral) handler.getPending()).forgetRetries) {
                     Log.d(TAG , "forgetting retry count of " + name + address);
                     peripheralConnectTryCount.remove(address);
                 }
 
-                if (pendingTask instanceof DisconnectPeripheral && ((DisconnectPeripheral) pendingTask).tryReconnect) {
+                if (handler.getPending() instanceof DisconnectPeripheral && ((DisconnectPeripheral) handler.getPending()).tryReconnect) {
 
                     if (avoidConnectingToPeripheral(gatt.getDevice())) {
                         Log.d(TAG , "skip trying to reconnect to " + name + address);
@@ -329,7 +329,7 @@ public class BLECentral {
         @SuppressLint("MissingPermission")
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-            boolean shouldContinue = pendingTask instanceof DiscoverServices && ((DiscoverServices) pendingTask).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
+            boolean shouldContinue = handler.getPending() instanceof DiscoverServices && ((DiscoverServices) handler.getPending()).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
             if (!shouldContinue) {
                 Log.w(TAG , "current task is not discover services or not for this device, skipping");
                 return;
@@ -359,8 +359,8 @@ public class BLECentral {
         public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
             super.onMtuChanged(gatt, mtu, status);
 
-            boolean isMtuTask = pendingTask instanceof NegotiateMTU;
-            boolean isSameAddress = isMtuTask && ((NegotiateMTU) pendingTask).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
+            boolean isMtuTask = handler.getPending() instanceof NegotiateMTU;
+            boolean isSameAddress = isMtuTask && ((NegotiateMTU) handler.getPending()).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
             boolean shouldContinue = isMtuTask && isSameAddress;
             if (!shouldContinue) {
                 Log.w(TAG , "current task is not mtu changing or not this device, skipping");
@@ -394,8 +394,8 @@ public class BLECentral {
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
             super.onDescriptorWrite(gatt, descriptor, status);
 
-            boolean isEnableIndication = pendingTask instanceof EnableIndication;
-            boolean isSameAddress = isEnableIndication && ((EnableIndication) pendingTask).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
+            boolean isEnableIndication = handler.getPending() instanceof EnableIndication;
+            boolean isSameAddress = isEnableIndication && ((EnableIndication) handler.getPending()).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
             boolean shouldContinue = isEnableIndication && isSameAddress;
             if (!shouldContinue) {
                 Log.w(TAG , "current task is not descriptor writing or not this device, skipping");
@@ -430,9 +430,9 @@ public class BLECentral {
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
             super.onCharacteristicRead(gatt, characteristic, status);
 
-            boolean isReadCharInstance = pendingTask instanceof ReadCharacteristic;
-            boolean isSameChar = isReadCharInstance && ((ReadCharacteristic) pendingTask).characteristic.getUuid().equals(characteristic.getUuid());
-            boolean isSameAddress = isReadCharInstance && ((ReadCharacteristic) pendingTask).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
+            boolean isReadCharInstance = handler.getPending() instanceof ReadCharacteristic;
+            boolean isSameChar = isReadCharInstance && ((ReadCharacteristic) handler.getPending()).characteristic.getUuid().equals(characteristic.getUuid());
+            boolean isSameAddress = isReadCharInstance && ((ReadCharacteristic) handler.getPending()).gatt.getDevice().getAddress().equals(gatt.getDevice().getAddress());
 
             boolean shouldContinue = isReadCharInstance && isSameChar && isSameAddress;
             if (!shouldContinue) {
@@ -484,12 +484,12 @@ public class BLECentral {
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
             super.onCharacteristicWrite(gatt, characteristic, status);
-            boolean shouldContinue = pendingTask instanceof WriteCharacteristic && ((WriteCharacteristic) pendingTask).characteristic == characteristic;
+            boolean shouldContinue = handler.getPending() instanceof WriteCharacteristic && ((WriteCharacteristic) handler.getPending()).characteristic == characteristic;
             if (!shouldContinue) {
                 Log.w(TAG , "current task is not characteristic writing or not this characteristic, skipping");
                 return;
             }
-            WriteCharacteristic task = (WriteCharacteristic) pendingTask;
+            WriteCharacteristic task = (WriteCharacteristic) handler.getPending();
             String name = task.gatt.getDevice().getName();
             String address = task.gatt.getDevice().getAddress();
 
@@ -661,7 +661,7 @@ public class BLECentral {
         }
         //so that max retry devices have a chance to try connecting again
         peripheralConnectTryCount.clear();
-        if (pendingTask instanceof Scan) {
+        if (handler.getPending() instanceof Scan) {
             stopScan();
         }
     }
