@@ -56,7 +56,7 @@ import java.util.UUID;
 public class BLECentral {
     private final HashMap<String, BluetoothDevice> connectingPeripherals = new HashMap<>();
     private final Map<UUID, BluetoothGatt> connectedPeripherals = new HashMap<>();
-    private boolean centralIsOn = false;
+     boolean centralIsOn = false;
     BluetoothLeScanner scanner;
     private boolean isScanning = false;
     public final Map<String, Integer> peripheralConnectTryCount = new HashMap<>();
@@ -233,7 +233,7 @@ public class BLECentral {
         boolean isAlreadyConnecting = connectingPeripherals.containsKey(address);
         boolean isAlreadyConnected = getPeripheralUUID(address) != null;
         //To avoid duplicate central-peripheral connection in both directions. XOR so that hashes are more evenly distributed.
-        boolean avoidConViaCentral = hasBiggerHash && centralIsOn && peripheralIsOn;
+        boolean avoidConViaCentral = hasBiggerHash && centralIsOn && handler.peripheralIsOn();
 
         boolean avoid = !centralIsOn || isAlreadyConnecting || tooManyRetries || isAlreadyConnected || avoidConViaCentral;
         if (avoid && !isAlreadyConnected) {

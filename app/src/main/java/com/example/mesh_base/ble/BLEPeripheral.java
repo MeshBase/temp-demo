@@ -32,7 +32,7 @@ public class BLEPeripheral {
 
     /////peripheral fields
     private BluetoothGattServer gattServer;
-    private boolean peripheralIsOn = false;
+    boolean peripheralIsOn = false;
     private final HashMap<String, BluetoothDevice> connectingCentrals = new HashMap<>();
     private final HashMap<UUID, BluetoothDevice> connectedCentrals = new HashMap<>();
     private BluetoothLeAdvertiser advertiser;
