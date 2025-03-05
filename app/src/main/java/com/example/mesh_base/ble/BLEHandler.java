@@ -30,7 +30,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class BLEHandler extends ConnectionHandler {
 
 
-  static final String CTRL = " central: ";
+  static final String CTRL = "central: ";
   static final String PRFL = "peripheral:";
   /////common fields and methods
   final String TAG = "my_bleHandler";

@@ -38,9 +38,14 @@ public class BLEPeripheral {
   private BluetoothGattCharacteristic peripheralMessageCharacteristic;
   private BluetoothGattDescriptor peripheralMessageDescriptor;
   private String TAG;
+
   BLEPeripheral(BLEHandler handler) {
     this.handler = handler;
     this.TAG = handler.TAG + BLEHandler.PRFL;
+  }
+
+  BluetoothDevice getCentral(UUID id) {
+    return connectedCentrals.get(id);
   }  private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
 
     @Override
@@ -258,13 +263,6 @@ public class BLEPeripheral {
     }
   };
 
-  BluetoothDevice getCentral(UUID id) {
-    return connectedCentrals.get(id);
-  }
-
-
-  ///// peripheral methods (follows sequence of operations as much as possible)
-
   public void startPeripheral() {
     if (peripheralIsOn) {
       Log.d(TAG, "is already on");
@@ -275,8 +273,11 @@ public class BLEPeripheral {
     handler.addToQueue(new StartGattServer());
   }
 
+
+  ///// peripheral methods (follows sequence of operations as much as possible)
+
   @SuppressLint("MissingPermission")
-  private void startGattServer(StartGattServer task) {
+  void startGattServer(StartGattServer task) {
     if (gattServer != null || !peripheralIsOn) {
       Log.d(TAG, "skipping starting gatt server due to isNotNull:" + (gattServer != null) + " peripheralIsOff:" + !peripheralIsOn);
       handler.taskEnded();
@@ -312,13 +313,13 @@ public class BLEPeripheral {
     gattServer.addService(service);
   }
 
-  private void expireStartGattServer(StartGattServer task) {
+  void expireStartGattServer(StartGattServer task) {
     handler.addToQueue(new CloseGatt());
     handler.taskEnded();
   }
 
   @SuppressLint("MissingPermission")
-  private void startAdvertising(Advertise task) {
+  void startAdvertising(Advertise task) {
     boolean alreadyAdvertising = advertiser != null;
     if (gattServer == null || !peripheralIsOn || alreadyAdvertising) {
       Log.d(TAG, "skipping starting advertising due to gatIsNull:" + (gattServer == null) + " peripheralIsOff:" + !peripheralIsOn + "alreadyAdvertising:" + alreadyAdvertising);
@@ -349,7 +350,7 @@ public class BLEPeripheral {
   }
 
   @SuppressLint("MissingPermission")
-  private void expireStartAdvertising(Advertise task) {
+  void expireStartAdvertising(Advertise task) {
     Log.d(TAG, "advertising expired, closing gatt server");
     advertiser.stopAdvertising(advertisementCallback);
     advertiser = null;
@@ -368,7 +369,7 @@ public class BLEPeripheral {
   }
 
   @SuppressLint("MissingPermission")
-  private void startConnectCentral(ConnectCentral task) {
+  void startConnectCentral(ConnectCentral task) {
     //so that server.cancelConnection() causes disconnect events. According to https://stackoverflow.com/questions/38762758/bluetoothgattserver-cancelconnection-does-not-cancel-the-connection
     if (gattServer == null) {
       Log.d(TAG, "gatt server has been already closed, skipping connecting");
@@ -380,7 +381,7 @@ public class BLEPeripheral {
   }
 
   @SuppressLint("MissingPermission")
-  private void startIndicateCharacteristic(IndicateCharacteristic task) {
+  void startIndicateCharacteristic(IndicateCharacteristic task) {
     if (task.characteristic == null || gattServer == null) {
       Log.w(TAG, "can not indicate message to central" + task.device.getName() + task.device.getAddress() + " because characteristicIsNull:" + (task.characteristic == null) + " gattServerIsNull" + (gattServer == null));
       handler.taskEnded();
@@ -390,12 +391,36 @@ public class BLEPeripheral {
     gattServer.notifyCharacteristicChanged(task.device, task.characteristic, true);
   }
 
-  private void expireIndicateCharacteristic(IndicateCharacteristic task) {
+  void expireIndicateCharacteristic(IndicateCharacteristic task) {
     if (task.remainingRetries > 0) {
       handler.addToQueue(new IndicateCharacteristic(task.remainingRetries - 1, task.characteristic, task.value, task.device));
     } else {
       handler.addToQueue(new DisconnectCentral(task.device));
     }
+  }
+
+  @SuppressLint("MissingPermission")
+  void startDisconnectCentral(DisconnectCentral task) {
+    if (gattServer == null) {
+      Log.d(TAG, "gatt server already closed, skipping disconnecting");
+      handler.taskEnded();
+      return;
+    }
+    boolean isConnecting = (connectingCentrals.containsKey(task.device.getAddress()));
+    boolean isConnected = getCentralUUID(task.device.getAddress()) != null;
+    if (!isConnecting && !isConnected) {
+      Log.d(TAG, "skipping disconnecting to " + task.device.getName() + task.device.getAddress() + " as it is already not connected");
+      handler.taskEnded();
+      return;
+    }
+    gattServer.cancelConnection(task.device);
+  }
+
+  void expireDisconnectCentral(DisconnectCentral task) {
+    UUID uuid = getCentralUUID(task.device.getAddress());
+    handler.notifyDisconnect(uuid);
+    connectingCentrals.remove(task.device.getAddress());
+    connectedCentrals.remove(uuid);
   }  private final AdvertiseCallback advertisementCallback = new AdvertiseCallback() {
     @Override
     public void onStartSuccess(AdvertiseSettings settingsInEffect) {
@@ -435,30 +460,6 @@ public class BLEPeripheral {
   };
 
   @SuppressLint("MissingPermission")
-  private void startDisconnectCentral(DisconnectCentral task) {
-    if (gattServer == null) {
-      Log.d(TAG, "gatt server already closed, skipping disconnecting");
-      handler.taskEnded();
-      return;
-    }
-    boolean isConnecting = (connectingCentrals.containsKey(task.device.getAddress()));
-    boolean isConnected = getCentralUUID(task.device.getAddress()) != null;
-    if (!isConnecting && !isConnected) {
-      Log.d(TAG, "skipping disconnecting to " + task.device.getName() + task.device.getAddress() + " as it is already not connected");
-      handler.taskEnded();
-      return;
-    }
-    gattServer.cancelConnection(task.device);
-  }
-
-  private void expireDisconnectCentral(DisconnectCentral task) {
-    UUID uuid = getCentralUUID(task.device.getAddress());
-    handler.notifyDisconnect(uuid);
-    connectingCentrals.remove(task.device.getAddress());
-    connectedCentrals.remove(uuid);
-  }
-
-  @SuppressLint("MissingPermission")
   private void sendResponse(BluetoothDevice device, int requestId, int newState, int offset, byte[] data) {
     if (gattServer == null) {
       Log.d(TAG, "gatt server already closed, skipping sending response");
@@ -493,7 +494,7 @@ public class BLEPeripheral {
   }
 
   @SuppressLint("MissingPermission")
-  private void startClosingGatt(CloseGatt task) {
+  void startClosingGatt(CloseGatt task) {
     if (gattServer == null) {
       Log.d(TAG, "gatt has already been stopped, skipping");
       handler.addToQueue(new Scan());
