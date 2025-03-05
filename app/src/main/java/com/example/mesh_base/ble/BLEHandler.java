@@ -200,33 +200,22 @@ public class BLEHandler extends ConnectionHandler {
 
   @SuppressLint("MissingPermission")
   void notifyConnect(UUID uuid) {
-    BluetoothDevice peripheral = connectedCentrals.get(uuid);
-    BluetoothGatt centralGatt = connectedPeripherals.get(uuid);
-    BluetoothDevice central = centralGatt == null ? null : centralGatt.getDevice();
+    BluetoothGatt perGatt = central.getPeripheral(uuid);
+    BluetoothDevice perDevice = perGatt != null ? perGatt.getDevice() : null;
+    BluetoothDevice centDevice = peripheral.getCentral(uuid);
 
-    if (central == null && peripheral == null) {
+    if (centDevice == null && perDevice == null) {
       Log.w(TAG, "connected device " + uuid + " not found in centrals or peripherals!");
       return;
     }
 
+    String peripheralName = perDevice != null ? perDevice.getName() : null;
+    String centralName = centDevice != null ? centDevice.getName() : null;
+    String address = centDevice != null ? centDevice.getAddress() : perDevice.getName();
 
-    String name = "unk";
-    String address = "unk";
-    if (peripheral != null) {
-      address = peripheral.getAddress();
-      if (peripheral.getName() != null) {
-        name = peripheral.getName();
-      } else {
-        name = "Unknown-Peripheral-" + uuid.toString().substring(0, 5);
-      }
-    } else {
-      address = central.getAddress();
-      if (central.getName() != null) {
-        name = central.getName();
-      } else {
-        name = "Unknown-Central-" + uuid.toString().substring(0, 5);
-      }
-    }
+    String name = "Unknown" + (centDevice == null ? "Peripheral" : "Central") + uuid.toString().substring(0, 5);
+    if (peripheralName != null) name = peripheralName;
+    else if (centralName != null) name = centralName;
 
     BLEDevice device = new BLEDevice(uuid, name, address);
     connectedDevices.put(uuid, device);
@@ -304,22 +293,22 @@ public class BLEHandler extends ConnectionHandler {
     }
 
     BluetoothGatt gatt = central.getPeripheral(neighbor.uuid);
-    BluetoothDevice centralDevice = peripheral.connectedCentrals.get(neighbor.uuid);
+    BluetoothDevice centralDevice = peripheral.getCentral(neighbor.uuid);
     if (gatt == null && centralDevice == null) {
       Log.w(TAG, "device exists, but not found in connectedCentrals nor connectedPeripherals!" + neighbor.name + neighbor.uuid);
       return;
     }
 
     if (gatt != null) {
-      BluetoothGattCharacteristic characteristic = getMessageCharacteristic(gatt);
+      BluetoothGattCharacteristic characteristic = central.getMessageCharacteristic(gatt);
       addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3, neighbor.uuid));
     } else {
-      addToQueue(new IndicateCharacteristic(3, peripheralMessageCharacteristic, data, centralDevice));
+      addToQueue(new IndicateCharacteristic(3, peripheral.getMessageCharacteristic(), data, centralDevice));
     }
 
     if (pendingTask instanceof Scan) {
       Log.d(TAG + CTRL, "ending scan to write quickly");
-      stopScan();
+      central.stopScan();
       addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
       taskEnded();
     }
