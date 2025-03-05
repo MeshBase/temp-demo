@@ -41,6 +41,7 @@ public class BLEHandler extends ConnectionHandler {
   Peripheral peripheral;
   private BLETask pendingTask = null;
 
+
   //TODO: use BLE Permissions to notify connected and disconnected
   BLEHandler(NeighborConnectedListener neighborConnectedListener, NeighborDisconnectedListener neighborDisconnectedListener, NeighborDiscoveredListener neighborDiscoveredListener, DisconnectedListener disconnectedListener, DataListener dataListener, NearbyDevicesListener nearbyDevicesListener, Context context, UUID id) {
     super(neighborConnectedListener, neighborDisconnectedListener, neighborDiscoveredListener, disconnectedListener, dataListener, nearbyDevicesListener);
@@ -48,6 +49,47 @@ public class BLEHandler extends ConnectionHandler {
     this.id = id;
     this.central = new Central(this);
     this.peripheral = new Peripheral(this);
+  }
+
+
+  BLETask getPending() {
+    return pendingTask;
+  }
+
+  Context getContext() {
+    return context;
+  }
+
+  UUID getId() {
+    return this.id;
+  }
+
+  boolean peripheralIsOn() {
+    return peripheral.getIsOn();
+  }
+
+  AbstractQueue<BLETask> getQueue() {
+    return queue;
+  }
+
+  boolean connectedExists(UUID uuid) {
+    return connectedDevices.containsKey(uuid);
+  }
+
+  void startCentral() {
+    central.start();
+  }
+
+  void startPeripheral() {
+    peripheral.start();
+  }
+
+  void stopCentral() {
+    central.stop();
+  }
+
+  void stopPeripheral() {
+    peripheral.stop();
   }
 
 
@@ -61,29 +103,6 @@ public class BLEHandler extends ConnectionHandler {
     }
   }
 
-  BLETask getPending() {
-    return pendingTask;
-  }
-
-  boolean peripheralIsOn() {
-    return peripheral.getIsOn();
-  }
-
-  Context getContext() {
-    return context;
-  }
-
-  UUID getId() {
-    return this.id;
-  }
-
-  AbstractQueue<BLETask> getQueue() {
-    return queue;
-  }
-
-  boolean centralIsOn() {
-    return central.getIsOn();
-  }
 
   private void startNextTask() {
     synchronized (queue) {
@@ -188,9 +207,6 @@ public class BLEHandler extends ConnectionHandler {
     }, task.expireMilli);
   }
 
-  boolean connectedExists(UUID uuid) {
-    return connectedDevices.containsKey(uuid);
-  }
 
   @SuppressLint("MissingPermission")
   void notifyConnect(UUID uuid) {
@@ -242,26 +258,12 @@ public class BLEHandler extends ConnectionHandler {
   }
 
 
+  //- important exposed methods -//
   @Override
   public ArrayList<Device> getNeighbourDevices() {
     return new ArrayList<>(connectedDevices.values());
   }
 
-  void startCentral() {
-    central.start();
-  }
-
-  void startPeripheral() {
-    peripheral.start();
-  }
-
-  void stopCentral() {
-    central.stop();
-  }
-
-  void stopPeripheral() {
-    peripheral.stop();
-  }
 
   @Override
   public void start() throws Exception {

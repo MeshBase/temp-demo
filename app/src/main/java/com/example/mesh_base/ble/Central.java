@@ -63,6 +63,22 @@ public class Central {
     return isOn;
   }
 
+  Map<String, BluetoothDevice> getConnectingDevices() {
+    return connectingDevices;
+  }
+
+  Map<UUID, BluetoothGatt> getConnectedDevices() {
+    return connectedDevices;
+  }
+
+  Map<String, Integer> getConnectTryCount() {
+    return connectTryCount;
+  }
+
+  BLEHandler getBLEHandler() {
+    return handler;
+  }
+
   void start() {
     isOn = true;
     //1 device to not make users wait too much for the first connection
@@ -138,22 +154,6 @@ public class Central {
       }
     }
     return null;
-  }
-
-  Map<String, BluetoothDevice> getConnectingDevices() {
-    return connectingDevices;
-  }
-
-  Map<UUID, BluetoothGatt> getConnectedDevices() {
-    return connectedDevices;
-  }
-
-  Map<String, Integer> getConnectTryCount() {
-    return connectTryCount;
-  }
-
-  BLEHandler getBLEHandler() {
-    return handler;
   }
 
 
