@@ -70,7 +70,7 @@ public class BLEHandler extends ConnectionHandler {
   }
 
   boolean peripheralIsOn() {
-    return peripheral.peripheralIsOn;
+    return peripheral.isOn;
   }
 
   Context getContext() {

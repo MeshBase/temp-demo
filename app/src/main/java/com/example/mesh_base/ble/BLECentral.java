@@ -85,6 +85,7 @@ public class BLECentral {
         handler.taskEnded();
         return;
       }
+
       scanner = btManager.getAdapter().getBluetoothLeScanner();
       if (scanner == null) {
         Log.e(TAG + CTRL, "scanner is null, cant scan");
@@ -186,6 +187,19 @@ public class BLECentral {
     int count = peripheralConnectTryCount.getOrDefault(task.device.getAddress(), 0);
     peripheralConnectTryCount.put(task.device.getAddress(), count + 1);
     connectingPeripherals.remove(task.device.getAddress());
+  }
+
+  @SuppressLint("MissingPermission")
+  void startDisconnectPeripheral(DisconnectPeripheral task) {
+    boolean isConnecting = connectingPeripherals.containsKey(task.gatt.getDevice().getAddress());
+    boolean isConnected = connectedPeripherals.containsKey(getPeripheralUUID(task.gatt.getDevice().getAddress()));
+    if (!isConnecting && !isConnected) {
+      Log.d(TAG, "skipping disconnect because" + task.gatt.getDevice().getName() + task.gatt.getDevice().getAddress() + "is already disconnected");
+      handler.taskEnded();
+      return;
+    }
+
+    task.gatt.disconnect();
   }  private final ScanCallback scanCallback = new ScanCallback() {
 
     @SuppressLint("MissingPermission")
@@ -247,19 +261,6 @@ public class BLECentral {
   ///// central methods (follows sequence of operations as much as possible)
 
   @SuppressLint("MissingPermission")
-  void startDisconnectPeripheral(DisconnectPeripheral task) {
-    boolean isConnecting = connectingPeripherals.containsKey(task.gatt.getDevice().getAddress());
-    boolean isConnected = connectedPeripherals.containsKey(getPeripheralUUID(task.gatt.getDevice().getAddress()));
-    if (!isConnecting && !isConnected) {
-      Log.d(TAG, "skipping disconnect because" + task.gatt.getDevice().getName() + task.gatt.getDevice().getAddress() + "is already disconnected");
-      handler.taskEnded();
-      return;
-    }
-
-    task.gatt.disconnect();
-  }
-
-  @SuppressLint("MissingPermission")
   void expireDisconnectPeripheral(DisconnectPeripheral task) {
     String address = task.gatt.getDevice().getAddress();
     task.gatt.close();
@@ -297,6 +298,25 @@ public class BLECentral {
   }
 
   void expireReadingCharacteristic(ReadCharacteristic task) {
+    handler.addToQueue(new DisconnectPeripheral(task.gatt));
+  }
+
+  @SuppressLint("MissingPermission")
+  void startEnablingIndication(EnableIndication task) {
+    BluetoothGattDescriptor descriptor = task.characteristic.getDescriptor(CCCD_UUID);
+    boolean success = task.gatt.setCharacteristicNotification(task.characteristic, true);
+    if (!success || descriptor == null) {
+      Log.w(TAG, "could not enable indication due to couldSetCharNotification:" + !success + " descriptorIsNull:" + (descriptor == null));
+      handler.addToQueue(new DisconnectPeripheral(task.gatt));
+      handler.taskEnded();
+      return;
+    }
+
+    descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+    task.gatt.writeDescriptor(descriptor);
+  }
+
+  void expireEnablingIndication(EnableIndication task) {
     handler.addToQueue(new DisconnectPeripheral(task.gatt));
   }  private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
     @SuppressLint("MissingPermission")
@@ -583,25 +603,6 @@ public class BLECentral {
       }
     }
   };
-
-  @SuppressLint("MissingPermission")
-  void startEnablingIndication(EnableIndication task) {
-    BluetoothGattDescriptor descriptor = task.characteristic.getDescriptor(CCCD_UUID);
-    boolean success = task.gatt.setCharacteristicNotification(task.characteristic, true);
-    if (!success || descriptor == null) {
-      Log.w(TAG, "could not enable indication due to couldSetCharNotification:" + !success + " descriptorIsNull:" + (descriptor == null));
-      handler.addToQueue(new DisconnectPeripheral(task.gatt));
-      handler.taskEnded();
-      return;
-    }
-
-    descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
-    task.gatt.writeDescriptor(descriptor);
-  }
-
-  void expireEnablingIndication(EnableIndication task) {
-    handler.addToQueue(new DisconnectPeripheral(task.gatt));
-  }
 
   @SuppressLint("MissingPermission")
   void startWritingCharacteristic(WriteCharacteristic task) {
