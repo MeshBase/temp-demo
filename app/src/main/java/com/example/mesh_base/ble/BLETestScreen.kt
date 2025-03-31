@@ -115,9 +115,9 @@ fun BleTestScreen(blePerm: BLEPermissions) {
                     Handler(Looper.getMainLooper()).post({
                         Toast.makeText(
                             context,
-                            "Received from router: ${
+                            "Received: ${
                                 protocol.body.msg
-                            } from device with uuid=${protocol.sender} through neighbor=${device.name}",
+                            } \nfrom device with uuid=${protocol.sender} \nthrough neighbor=${device.name}",
                             Toast.LENGTH_SHORT
                         ).show()
                     })

@@ -76,7 +76,7 @@ public class Router {
   private void handleOnData(Device neighbor, byte[] byteArray) {
     //TODO: clarify the way to know the body type before decoding the body. Assuming send message for now
     MeshProtocol<SendMessageBody> protocol = MeshProtocol.decode(byteArray, SendMessageBody::decode);
-    if (protocol.body.getDestination() == id) {
+    if (protocol.body.getDestination().equals(id)) {
       //TODO: figure out giving byte[] vs Protocol to the onReceivedData listener
       //TODO: prevent user from receiving the message twice
       onReceivedData.onEvent(byteArray, neighbor);
