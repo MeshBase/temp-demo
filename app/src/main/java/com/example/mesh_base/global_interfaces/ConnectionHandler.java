@@ -4,6 +4,7 @@ package com.example.mesh_base.global_interfaces;
 import java.util.ArrayList;
 
 
+//TODO: add isOn(), isOff(), isEnabled() status
 public abstract class ConnectionHandler {
 
   protected NeighborDisconnectedListener neighborDisconnectedListener;
@@ -22,7 +23,7 @@ public abstract class ConnectionHandler {
     this.nearbyDevicesListener = nearbyDevicesListener;
   }
 
-  //TODO: append data listener instead of replacing it so that both Router and Meshbase can listen
+  //TODO: append listeners instead of replacing them so that both Router and Meshbase can listen
   public void setDataListener(DataListener dataListener) {
     this.dataListener = dataListener;
   }
