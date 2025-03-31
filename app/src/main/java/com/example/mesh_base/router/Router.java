@@ -20,7 +20,7 @@ public class Router {
   HashSet<String> routedSet = new HashSet<>();
   DataListener onReceivedData = (data, neighbor) -> Log.d(TAG, "Received data from " + neighbor.name);
 
-  Router(ArrayList<ConnectionHandler> connectionHandlers, UUID id) {
+  public Router(ArrayList<ConnectionHandler> connectionHandlers, UUID id) {
     this.connectionHandlers = connectionHandlers;
     this.id = id;
 
@@ -50,6 +50,7 @@ public class Router {
   public void floodData(byte[] data) {
     for (ConnectionHandler handler : connectionHandlers) {
       try {
+        //TODO: send only if the handler is On()
         handler.send(data);
       } catch (SendError e) {
         //TODO: reconsider the need for errors vs raising them only on timeout
@@ -75,16 +76,18 @@ public class Router {
   private void handleOnData(Device neighbor, byte[] byteArray) {
     //TODO: clarify the way to know the body type before decoding the body. Assuming send message for now
     MeshProtocol<SendMessageBody> protocol = MeshProtocol.decode(byteArray, SendMessageBody::decode);
-    if (hasRoutedDataBefore(protocol.messageId, protocol.sender)) {
-      Log.d(TAG, "already routed data. skipping. messageId=" + protocol.messageId + " sender=" + protocol.sender);
-    } else if (protocol.body.getDestination() == id) {
-      //TODO: figure out giving byte[] vs a protocol to the onReceivedData listener
+    if (protocol.body.getDestination() == id) {
+      //TODO: figure out giving byte[] vs Protocol to the onReceivedData listener
+      //TODO: prevent user from receiving the message twice
       onReceivedData.onEvent(byteArray, neighbor);
+    } else if (hasRoutedDataBefore(protocol.messageId, protocol.sender)) {
+      Log.d(TAG, "already routed data. skipping. messageId=" + protocol.messageId + " sender=" + protocol.sender);
     } else if (protocol.remainingHops <= 0) {
       Log.d(TAG, "finished remaining hops, cant route anymore. messageId=" + protocol.messageId + " sender=" + protocol.sender);
     } else {
       setRouted(protocol.messageId, protocol.sender);
       protocol.remainingHops -= 1;
+      Log.d(TAG, "relaying data " + protocol.messageId + "sender=" + protocol.sender + " remainingHops=" + protocol.remainingHops);
       floodData(protocol.encode());
     }
   }
