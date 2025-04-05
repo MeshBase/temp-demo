@@ -180,7 +180,7 @@ fun BleTestScreen(blePerm: BLEPermissions) {
                                         )
                                     )
 
-                                val listener = object : SendListener<SendMessageBody>() {
+                                val listener = object : SendListener {
                                     override fun onError(error: SendError) {
                                         Handler(Looper.getMainLooper()).post({
                                             Toast.makeText(
