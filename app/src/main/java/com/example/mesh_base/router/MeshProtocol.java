@@ -52,12 +52,12 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
 
     switch(messageType) {
       case 1:
-        return ProtocolType.sendMessage;
+        return ProtocolType.SEND_MESSAGE;
       case 2:
-        return ProtocolType.receiveMessage;
+        return ProtocolType.RECEIVE_MESSAGE;
         //add more protocol cases here
       default:
-        return ProtocolType.unknownMessageType;
+        return ProtocolType.UNKNOWN_MESSAGE_TYPE;
     }
   }
   @Override
