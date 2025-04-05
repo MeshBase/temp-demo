@@ -20,10 +20,10 @@ public class Router {
   ArrayList<ConnectionHandler> connectionHandlers;
   HashSet<String> routedSet = new HashSet<>();
   DataListener onReceivedData = (data, neighbor) -> Log.d(TAG, "Received data from " + neighbor.name);
-  //TODO: make router call onError, onAck, and onResponse when AckProtocol and getting Headers from byte[] is implemented
   HashMap<Integer, SendListener> listeners = new HashMap<>();
 
   public Router(ArrayList<ConnectionHandler> connectionHandlers, UUID id) {
+
     this.connectionHandlers = connectionHandlers;
     this.id = id;
 
@@ -61,6 +61,7 @@ public class Router {
     }
 
     if (!hasAttemptedSending) {
+      //TODO: Create a dedicated error type if necessary
       throw new SendError("Could not send to any neighbor");
     }
   }
@@ -98,7 +99,7 @@ public class Router {
       try {
         floodData(protocol.encode());
       } catch (SendError e) {
-        //Silent error because there is not listener for relaying data
+        //Silent error because there is no listener for relaying data
         Log.e(TAG, "Error relaying data: " + e.getMessage());
       }
     }
@@ -110,7 +111,7 @@ public class Router {
     listeners.remove(messageId);
   }
 
-  //TODO: add error for wrong response type
+  //TODO: throw error for unexpected response type
   private void handleOnResponse(MeshProtocol<?> response, int messageId) {
     SendListener listener = getListenerOrError(messageId);
     listener.onResponse(response);
