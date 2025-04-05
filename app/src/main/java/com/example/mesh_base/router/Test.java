@@ -24,6 +24,9 @@ public class Test {
                 (byte) 0x72, (byte) 0x6c, (byte) 0x64   // "world"
         };
 
+        //usage to get the type of the byte sent
+        System.out.println(MeshProtocol.getByteType(byteArray));
+
         // TO DECODE DATA YOU CAN DO THE FOLLOWING
         Function<byte[], SendMessageBody> bodyDecoder = SendMessageBody::decode;
         MeshProtocol<SendMessageBody> data = MeshProtocol.decode(byteArray, bodyDecoder);

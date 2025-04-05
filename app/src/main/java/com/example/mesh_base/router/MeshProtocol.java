@@ -37,6 +37,20 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
     return new ConcreteMeshProtocol<>(messageType, remainingHops, messageId, sender, body);
   }
 
+  public static ProtocolType getByteType(byte[] data) {
+    ByteBuffer buffer = ByteBuffer.wrap(data);
+    int messageType = buffer.getInt();
+
+    switch(messageType) {
+      case 1:
+        return ProtocolType.sendMessage;
+      case 2:
+        return ProtocolType.receiveMessage;
+        //add more protocol cases here
+      default:
+        return ProtocolType.unknownMessageType;
+    }
+  }
   @Override
   public byte[] encode() {
     byte[] bodyBytes = body != null ? body.encode() : new byte[0];
