@@ -202,7 +202,7 @@ fun BleTestScreen(blePerm: BLEPermissions) {
                                         })
                                     }
 
-                                    override fun onResponse(protocol: MeshProtocol<SendMessageBody>) {
+                                    override fun onResponse(protocol: MeshProtocol<*>) {
                                         //No response expected for SendMessageBody
                                         Handler(Looper.getMainLooper()).post({
                                             Toast.makeText(
