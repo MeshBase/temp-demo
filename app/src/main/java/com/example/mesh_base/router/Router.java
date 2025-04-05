@@ -50,8 +50,9 @@ public class Router {
   public void floodData(byte[] data) {
     for (ConnectionHandler handler : connectionHandlers) {
       try {
-        //TODO: send only if the handler is On()
-        handler.send(data);
+        if (handler.isOn()) {
+          handler.send(data);
+        }
       } catch (SendError e) {
         //TODO: reconsider the need for errors vs raising them only on timeout
         throw new RuntimeException(e);
