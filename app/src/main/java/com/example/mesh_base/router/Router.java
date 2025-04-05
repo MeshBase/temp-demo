@@ -50,7 +50,7 @@ public class Router {
   public void floodData(byte[] data) {
     for (ConnectionHandler handler : connectionHandlers) {
       try {
-        if (handler.isOn()) {
+        if (handler.isOn() && !handler.getNeighbourDevices().isEmpty()) {
           handler.send(data);
         }
       } catch (SendError e) {
