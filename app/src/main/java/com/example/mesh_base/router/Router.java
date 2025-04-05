@@ -19,7 +19,7 @@ public class Router {
   ArrayList<ConnectionHandler> connectionHandlers;
   HashSet<String> routedSet = new HashSet<>();
   DataListener onReceivedData = (data, neighbor) -> Log.d(TAG, "Received data from " + neighbor.name);
-  //TODO: make router call onError, onAck, and onResponse when AckProtocol and getting Headers from byte[] is finished
+  //TODO: make router call onError, onAck, and onResponse when AckProtocol and getting Headers from byte[] is implemented
   HashMap<Integer, SendListener<?>> listeners = new HashMap<>();
 
   public Router(ArrayList<ConnectionHandler> connectionHandlers, UUID id) {
