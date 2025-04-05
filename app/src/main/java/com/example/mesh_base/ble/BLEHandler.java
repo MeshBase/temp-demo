@@ -277,6 +277,10 @@ public class BLEHandler extends ConnectionHandler {
     peripheral.stop();
   }
 
+  public boolean isOn() {
+    return central.getIsOn() && peripheral.getIsOn();
+  }
+
   @Override
   public ArrayList<Device> getNearbyDevices() {
     return getNeighbourDevices();
