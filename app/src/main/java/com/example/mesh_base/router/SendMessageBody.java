@@ -10,7 +10,6 @@ public class SendMessageBody implements MeshSerializer<SendMessageBody> {
   private final String msg;
 
   public SendMessageBody(int command, boolean isBroadcast, UUID destination, String msg) {
-
     this.command = command;
     this.isBroadcast = isBroadcast;
     this.destination = destination;

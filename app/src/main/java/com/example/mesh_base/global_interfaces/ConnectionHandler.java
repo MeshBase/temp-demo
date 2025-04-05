@@ -34,6 +34,7 @@ public abstract class ConnectionHandler {
 
   public abstract void stop();
 
+
   public abstract boolean isOn();
 
   public abstract ArrayList<Device> getNearbyDevices();
