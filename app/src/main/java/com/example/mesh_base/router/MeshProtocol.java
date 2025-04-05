@@ -13,6 +13,8 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
   protected int remainingHops;
   protected int messageId;
 
+  private static final int HEADER_LENGTH = 32;
+
   public MeshProtocol(int messageType, int remainingHops, int messageId, UUID sender, T body) {
     this.messageType = messageType;
     this.remainingHops = remainingHops;
@@ -23,6 +25,10 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
 
   public static <T extends MeshSerializer<T>> MeshProtocol<T> decode(byte[] data,
                                                                      Function<byte[], T> bodyDecoder) {
+    if (data.length < HEADER_LENGTH) {
+      throw new IllegalArgumentException("Buffer data cannot be determined due to small length size. [SMALL_HEADER_SIZE]");
+    }
+
     ByteBuffer buffer = ByteBuffer.wrap(data);
     int messageType = buffer.getInt();
     int remainingHops = buffer.getInt();
@@ -38,17 +44,20 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
   }
 
   public static ProtocolType getByteType(byte[] data) {
+    if (data.length < 4) {
+        throw new IllegalArgumentException("Buffer data cannot be determined due to small length size.[CANNOT_DETERMINE_TYPE]");
+    }
     ByteBuffer buffer = ByteBuffer.wrap(data);
     int messageType = buffer.getInt();
 
     switch(messageType) {
       case 1:
-        return ProtocolType.sendMessage;
+        return ProtocolType.SEND_MESSAGE;
       case 2:
-        return ProtocolType.receiveMessage;
+        return ProtocolType.RECEIVE_MESSAGE;
         //add more protocol cases here
       default:
-        return ProtocolType.unknownMessageType;
+        return ProtocolType.UNKNOWN_MESSAGE_TYPE;
     }
   }
   @Override
@@ -56,7 +65,7 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
     byte[] bodyBytes = body != null ? body.encode() : new byte[0];
     int bodyLength = bodyBytes.length;
 
-    ByteBuffer buffer = ByteBuffer.allocate(4 + 4 + 4 + 16 + 4 + bodyLength);
+    ByteBuffer buffer = ByteBuffer.allocate(HEADER_LENGTH + bodyLength);
     buffer.putInt(messageType);
     buffer.putInt(remainingHops);
     buffer.putInt(messageId);
