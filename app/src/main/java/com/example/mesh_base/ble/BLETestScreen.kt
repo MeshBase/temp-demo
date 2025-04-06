@@ -27,8 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.mesh_base.global_interfaces.Device
+import com.example.mesh_base.global_interfaces.SendError
+import com.example.mesh_base.router.ConcreteMeshProtocol
 import com.example.mesh_base.router.MeshProtocol
 import com.example.mesh_base.router.Router
+import com.example.mesh_base.router.SendListener
 import com.example.mesh_base.router.SendMessageBody
 import com.example.mesh_base.ui.theme.MeshBaseTheme
 import java.util.UUID
@@ -162,7 +165,56 @@ fun BleTestScreen(blePerm: BLEPermissions) {
                                 modifier = Modifier.weight(1f)
                             )
                             Button(onClick = {
-                                router.sendData(message.toByteArray(Charsets.UTF_8), device.uuid)
+
+                                val protocol: MeshProtocol<SendMessageBody> =
+                                    ConcreteMeshProtocol<SendMessageBody>(
+                                        1,
+                                        4,
+                                        113,
+                                        UUID.fromString("dd91a1c8-5f6a-4430-815f-f3e1c8780fc8"),
+                                        SendMessageBody(
+                                            4,
+                                            false,
+                                            device.uuid,
+                                            message,
+                                        )
+                                    )
+
+                                val listener = object : SendListener {
+                                    override fun onError(error: SendError) {
+                                        Handler(Looper.getMainLooper()).post({
+                                            Toast.makeText(
+                                                context,
+                                                "Send error: ${protocol.body.msg} ${error.message}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        })
+                                    }
+
+                                    override fun onAck() {
+
+                                        Handler(Looper.getMainLooper()).post({
+                                            Toast.makeText(
+                                                context,
+                                                "Ack received for message=${protocol.body.msg}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        })
+                                    }
+
+                                    override fun onResponse(protocol: MeshProtocol<*>) {
+                                        //No response expected for SendMessageBody
+                                        Handler(Looper.getMainLooper()).post({
+                                            Toast.makeText(
+                                                context,
+                                                "unexpected response received",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        })
+                                    }
+                                }
+
+                                router.sendData(protocol, listener)
                             }) {
                                 Text("Send")
                             }

@@ -34,6 +34,9 @@ public abstract class ConnectionHandler {
 
   public abstract void stop();
 
+
+  public abstract boolean isOn();
+
   public abstract ArrayList<Device> getNearbyDevices();
 
   public abstract void send(byte[] data) throws SendError; //Send to all neighbors
