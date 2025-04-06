@@ -51,7 +51,7 @@ public class RouterUnitTest {
     when(handler.isOn()).thenReturn(false);
     SendListener listener2 = mock(SendListener.class);
     router.sendData(protocol, listener2);
-    verify(listener).onError(any(SendError.class));
+    verify(listener2).onError(any(SendError.class));
 
   }
 
