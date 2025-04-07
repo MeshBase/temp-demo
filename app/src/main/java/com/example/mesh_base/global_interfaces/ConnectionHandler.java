@@ -23,7 +23,7 @@ public abstract class ConnectionHandler {
     this.nearbyDevicesListener = nearbyDevicesListener;
   }
 
-  //TODO: append listeners instead of replacing them so that both Router and Meshbase can listen
+  //TODO: append listeners instead of replacing them so that both Router and MeshManager can listen
   public void setDataListener(DataListener dataListener) {
     this.dataListener = dataListener;
   }
