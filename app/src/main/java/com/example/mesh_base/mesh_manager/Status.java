@@ -1,8 +1,8 @@
 package com.example.mesh_base.mesh_manager;
 
 public class Status {
-  Property ble;
-  Property wifi;
+  public Property ble;
+  public Property wifi;
 
   Status(Property ble, Property wifi) {
     this.ble = ble;
@@ -11,9 +11,10 @@ public class Status {
 
   public static class Property {
 
-    boolean isSupported;
-    boolean isOn;
-    boolean isAllowed;
+    public boolean isSupported;
+    public boolean isOn;
+    public boolean isAllowed;
+
     public Property(boolean isSupported, boolean isOn, boolean isAllowed) {
       this.isSupported = isSupported;
       this.isOn = isOn;
