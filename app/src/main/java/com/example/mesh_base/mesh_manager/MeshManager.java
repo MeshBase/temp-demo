@@ -12,15 +12,6 @@ import com.example.mesh_base.router.Router;
 import java.util.ArrayList;
 import java.util.UUID;
 
-interface MeshBaseListener {
-  void onData(byte[] data);
-
-  void onStatusChange(Status status);
-
-  //TODO: add medium type in devices
-  void onNeighborsChanged();
-}
-
 class Status {
   Property ble;
   Property wifi;
@@ -48,10 +39,11 @@ public class MeshManager {
   //TODO: discuss directly using permission classes vs using them behind connection handlers
   private final BLEPermissions blePermissions;
   private final BLEHandler bleHelper;
+  private final MeshManagerListener listener;
   String TAG = "my_meshManager";
-  private MeshBaseListener listener;
 
-  public MeshManager(ComponentActivity context) {
+  public MeshManager(ComponentActivity context, MeshManagerListener listener) {
+    this.listener = listener;
     bleHelper = new BLEHandler(
             (device) -> {
               Log.d(TAG, "neighbor connected");
@@ -99,6 +91,11 @@ public class MeshManager {
     });
 
     router = new Router(helpers, id);
+    //TODO: accept protocol instead of byte array once the router's handleOnData is modified, to not cause conflict
+    //TODO: consider exposing the protocol itself to users
+    router.setOnReceivedData((data, neighbor) -> {
+      listener.onData(data);
+    });
   }
 
   void on() {
