@@ -3,7 +3,6 @@ package com.example.mesh_base.ble
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,70 +41,73 @@ import java.util.function.Function
 
 
 @Composable
-fun BleTestScreen(activity: ComponentActivity) {
+fun BleTestScreen(meshManager: MeshManager) {
 
-    // Use your app’s theme if desired
     MeshBaseTheme {
         val context = LocalContext.current
         val connectedDevices = remember { mutableStateListOf<Device>() }
 
-        val meshManager = MeshManager(activity, object : MeshManagerListener {
-            override fun onData(data: ByteArray, device: Device) {
-                val bodyDecoder =
-                    Function { d: ByteArray? -> SendMessageBody.decode(d) }
-                val protocol = MeshProtocol.decode(data, bodyDecoder)
-
-                Handler(Looper.getMainLooper()).post({
-                    Toast.makeText(
-                        context,
-                        "Received: ${
-                            protocol.body.msg
-                        } \nfrom device with uuid=${protocol.sender} \nthrough neighbor=${device.name}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                })
-            }
-
-            override fun onStatusChange(status: Status) {
-                Handler(Looper.getMainLooper()).post({
-                    Toast.makeText(
-                        context,
-                        "new status: ${status.ble.isOn}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                })
-            }
-
-            override fun onNeighborsChanged(neighbors: ArrayList<Device>) {
-                Handler(Looper.getMainLooper()).post({
-                    Toast.makeText(
-                        context,
-                        "neighbors changed",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                })
-            }
-
-            override fun onConnected(device: Device) {
-                connectedDevices.add(device)
-            }
-
-            override fun onDisconnected(device: Device?) {
-                connectedDevices.remove(device);
-            }
-
-            override fun onDiscovered(device: Device) {
-                Handler(Looper.getMainLooper()).post({
-                    Toast.makeText(context, "Discovered: ${device.name}", Toast.LENGTH_SHORT).show()
-                })
-            }
-
-        })
 
         var message by remember { mutableStateOf("") }
 
         LaunchedEffect(Unit) {
-            meshManager.on();
+
+            val listener = object : MeshManagerListener() {
+                override fun onData(data: ByteArray, device: Device) {
+                    val bodyDecoder =
+                        Function { d: ByteArray? -> SendMessageBody.decode(d) }
+                    val protocol = MeshProtocol.decode(data, bodyDecoder)
+
+                    Handler(Looper.getMainLooper()).post({
+                        Toast.makeText(
+                            context,
+                            "Received: ${
+                                protocol.body.msg
+                            } \nfrom device with uuid=${protocol.sender} \nthrough neighbor=${device.name}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    })
+                }
+
+                override fun onStatusChange(status: Status) {
+                    Handler(Looper.getMainLooper()).post({
+                        Toast.makeText(
+                            context,
+                            "new status: ${status.ble.isOn}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    })
+                }
+
+                override fun onNeighborsChanged(neighbors: ArrayList<Device>) {
+                    Handler(Looper.getMainLooper()).post({
+                        Toast.makeText(
+                            context,
+                            "neighbors changed",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    })
+                }
+
+                override fun onConnected(device: Device) {
+                    connectedDevices.add(device)
+                }
+
+                override fun onDisconnected(device: Device?) {
+                    connectedDevices.remove(device)
+                }
+
+                override fun onDiscovered(device: Device) {
+                    Handler(Looper.getMainLooper()).post({
+                        Toast.makeText(context, "Discovered: ${device.name}", Toast.LENGTH_SHORT)
+                            .show()
+                    })
+                }
+
+            }
+
+            meshManager.setListener(listener)
+            meshManager.on()
         }
 
         Scaffold(modifier = Modifier.fillMaxSize()) { padding ->

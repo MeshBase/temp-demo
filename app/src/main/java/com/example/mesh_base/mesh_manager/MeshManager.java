@@ -24,11 +24,10 @@ public class MeshManager {
   //TODO: discuss directly using permission classes vs using them behind connection handlers
   private final BLEPermissions blePermissions;
   private final BLEHandler bleHelper;
-  private final MeshManagerListener listener;
   String TAG = "my_meshManager";
+  private MeshManagerListener listener = MeshManagerListener.createEmpty();
 
-  public MeshManager(ComponentActivity context, MeshManagerListener listener) {
-    this.listener = listener;
+  public MeshManager(ComponentActivity context) {
     bleHelper = new BLEHandler(
             (device) -> {
               Log.d(TAG, "neighbor connected");
@@ -90,6 +89,10 @@ public class MeshManager {
 
   public UUID getId() {
     return id;
+  }
+
+  public void setListener(MeshManagerListener listener) {
+    this.listener = listener;
   }
 
   public void on() {
