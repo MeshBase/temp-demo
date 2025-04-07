@@ -3,6 +3,7 @@ package com.example.mesh_base.ble
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,9 +29,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.mesh_base.global_interfaces.Device
 import com.example.mesh_base.global_interfaces.SendError
+import com.example.mesh_base.mesh_manager.MeshManager
+import com.example.mesh_base.mesh_manager.MeshManagerListener
+import com.example.mesh_base.mesh_manager.Status
 import com.example.mesh_base.router.ConcreteMeshProtocol
 import com.example.mesh_base.router.MeshProtocol
-import com.example.mesh_base.router.Router
 import com.example.mesh_base.router.SendListener
 import com.example.mesh_base.router.SendMessageBody
 import com.example.mesh_base.ui.theme.MeshBaseTheme
@@ -39,93 +42,70 @@ import java.util.function.Function
 
 
 @Composable
-fun BleTestScreen(blePerm: BLEPermissions) {
+fun BleTestScreen(activity: ComponentActivity) {
 
     // Use your app’s theme if desired
     MeshBaseTheme {
         val context = LocalContext.current
-        val id = remember { UUID.randomUUID() }
         val connectedDevices = remember { mutableStateListOf<Device>() }
 
-        var message by remember { mutableStateOf("") }
+        val meshManager = MeshManager(activity, object : MeshManagerListener {
+            override fun onData(data: ByteArray, device: Device) {
+                val bodyDecoder =
+                    Function { d: ByteArray? -> SendMessageBody.decode(d) }
+                val protocol = MeshProtocol.decode(data, bodyDecoder)
 
-        val bleHandler = BLEHandler(
-            { connectedDevices.add(it) },
-            { connectedDevices.remove(it) },
-            { device ->
+                Handler(Looper.getMainLooper()).post({
+                    Toast.makeText(
+                        context,
+                        "Received: ${
+                            protocol.body.msg
+                        } \nfrom device with uuid=${protocol.sender} \nthrough neighbor=${device.name}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                })
+            }
+
+            override fun onStatusChange(status: Status) {
+                Handler(Looper.getMainLooper()).post({
+                    Toast.makeText(
+                        context,
+                        "new status: ${status.ble.isOn}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                })
+            }
+
+            override fun onNeighborsChanged(neighbors: ArrayList<Device>) {
+                Handler(Looper.getMainLooper()).post({
+                    Toast.makeText(
+                        context,
+                        "neighbors changed",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                })
+            }
+
+            override fun onConnected(device: Device) {
+                connectedDevices.add(device)
+            }
+
+            override fun onDisconnected(device: Device?) {
+                connectedDevices.remove(device);
+            }
+
+            override fun onDiscovered(device: Device) {
                 Handler(Looper.getMainLooper()).post({
                     Toast.makeText(context, "Discovered: ${device.name}", Toast.LENGTH_SHORT).show()
                 })
-            },
-            {
-                Handler(Looper.getMainLooper()).post({
-                    Toast.makeText(context, "disconnected", Toast.LENGTH_SHORT).show()
-                })
-            },
-            { data, device ->
-                Handler(Looper.getMainLooper()).post({
-                    Toast.makeText(
-                        context,
-                        "Received from BLE(should not happen): ${
-                            String(
-                                data,
-                                Charsets.UTF_8
-                            )
-                        } from ${device.name}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                })
-            },
-            {
-                Handler(Looper.getMainLooper()).post({
-                    Toast.makeText(
-                        context,
-                        "now have ${it.size} nearby devices",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                })
-            },
-            context,
-            id
-        )
-        val router = Router(arrayListOf(bleHandler), id)
+            }
+
+        })
+
+        var message by remember { mutableStateOf("") }
 
         LaunchedEffect(Unit) {
-            blePerm.setListener(
-                object : BLEPermissions.Listener {
-                    override fun onEnabled() {
-                        Toast.makeText(context, "BLE enabled", Toast.LENGTH_SHORT).show()
-                        bleHandler.startCentral()
-                        bleHandler.startPeripheral()
-                    }
-
-                    override fun onDisabled() {
-                        Toast.makeText(context, "BLE disabled", Toast.LENGTH_SHORT).show()
-                        bleHandler.stopCentral()
-                        bleHandler.stopPeripheral()
-                    }
-                }
-            )
-            blePerm.enable()
-
-            router.setOnReceivedData(
-                { data, device ->
-
-                    val bodyDecoder =
-                        Function { d: ByteArray? -> SendMessageBody.decode(d) }
-                    val protocol = MeshProtocol.decode(data, bodyDecoder)
-
-                    Handler(Looper.getMainLooper()).post({
-                        Toast.makeText(
-                            context,
-                            "Received: ${
-                                protocol.body.msg
-                            } \nfrom device with uuid=${protocol.sender} \nthrough neighbor=${device.name}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    })
-                }
-            )
+            meshManager.on();
         }
 
         Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -136,22 +116,6 @@ fun BleTestScreen(blePerm: BLEPermissions) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Button(onClick = { blePerm.enable() }) {
-                    Text("Enable BLE")
-                }
-                Button(onClick = { bleHandler.startCentral() }) {
-                    Text("Start Central")
-                }
-                Button(onClick = { bleHandler.stopCentral() }) {
-                    Text("Stop Central")
-                }
-                Button(onClick = { bleHandler.startPeripheral() }) {
-                    Text("Start Peripheral")
-                }
-                Button(onClick = { bleHandler.stopPeripheral() }) {
-                    Text("Stop Peripheral")
-                }
-
                 LazyColumn {
                     items(connectedDevices) { device ->
                         Row(
@@ -214,7 +178,7 @@ fun BleTestScreen(blePerm: BLEPermissions) {
                                     }
                                 }
 
-                                router.sendData(protocol, listener)
+                                meshManager.send(protocol, listener)
                             }) {
                                 Text("Send")
                             }

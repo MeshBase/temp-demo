@@ -33,13 +33,16 @@ public class MeshManager {
             (device) -> {
               Log.d(TAG, "neighbor connected");
               listener.onNeighborsChanged(getNeighbors());
+              listener.onConnected(device);
             },
             (device) -> {
               Log.d(TAG, "neighbor disconnected");
               listener.onNeighborsChanged(getNeighbors());
+              listener.onDisconnected(device);
             },
             (device) -> {
               Log.d(TAG, "neighbor discovered");
+              listener.onDiscovered(device);
             },
             //TODO: Remove argument from ConnectionHandler if using BLEPermissions to listen to connection/disconnection events
             //TODO: Remove device as argument as it is know that THIS device is the one which disconnected
@@ -82,9 +85,11 @@ public class MeshManager {
     router = new Router(helpers, id);
     //TODO: accept protocol instead of byte array once the router's handleOnData is modified, to not cause conflict
     //TODO: consider exposing the protocol itself to users
-    router.setOnReceivedData((data, neighbor) -> {
-      listener.onData(data);
-    });
+    router.setOnReceivedData(listener::onData);
+  }
+
+  public UUID getId() {
+    return id;
   }
 
   public void on() {
