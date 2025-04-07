@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity;
 import com.example.mesh_base.ble.BLEHandler;
 import com.example.mesh_base.ble.BLEPermissions;
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
+import com.example.mesh_base.global_interfaces.Device;
 import com.example.mesh_base.router.Router;
 
 import java.util.ArrayList;
@@ -47,9 +48,11 @@ public class MeshManager {
     bleHelper = new BLEHandler(
             (device) -> {
               Log.d(TAG, "neighbor connected");
+              listener.onNeighborsChanged(getNeighbors());
             },
             (device) -> {
               Log.d(TAG, "neighbor disconnected");
+              listener.onNeighborsChanged(getNeighbors());
             },
             (device) -> {
               Log.d(TAG, "neighbor discovered");
@@ -113,7 +116,12 @@ public class MeshManager {
   void setAllowedMedium() {
   }
 
-  void getNeighbors() {
+  ArrayList<Device> getNeighbors() {
+    ArrayList<Device> neighbors = new ArrayList<Device>();
+    for (ConnectionHandler helper : helpers) {
+      neighbors.addAll(helper.getNeighbourDevices());
+    }
+    return neighbors;
   }
 
   void send(byte[] data, String address) {
