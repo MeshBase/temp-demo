@@ -17,9 +17,8 @@ import java.util.UUID;
 
 public class MeshManager {
 
-
   private final ArrayList<ConnectionHandler> helpers = new ArrayList<>();
-  //TODO: consider accepting uuid from application vs generating one and storing it
+  //TODO: store uuid in local storage so that the devices address is consistent
   private final UUID id = UUID.randomUUID();
   private final Router router;
   //TODO: discuss directly using permission classes vs using them behind connection handlers
@@ -67,6 +66,7 @@ public class MeshManager {
       public void onEnabled() {
         try {
           bleHelper.start();
+          listener.onStatusChange(getStatus());
         } catch (Exception e) {
           //TODO: send error to user using a callback
         }
@@ -74,6 +74,7 @@ public class MeshManager {
 
       @Override
       public void onDisabled() {
+        listener.onStatusChange(getStatus());
         bleHelper.stop();
       }
     });
@@ -86,22 +87,20 @@ public class MeshManager {
     });
   }
 
-  void on() {
+  public void on() {
     //TODO: if having a list of permission classes is possible, loop through them and call .enable()
     //calling .enable() even if already enabled will call the onEnabled listener, which will call start()
     blePermissions.enable();
   }
 
-  void off() {
+  public void off() {
     for (ConnectionHandler helper : helpers) {
       helper.stop();
     }
+    listener.onStatusChange(getStatus());
   }
 
-  void setAllowedMedium() {
-  }
-
-  ArrayList<Device> getNeighbors() {
+  public ArrayList<Device> getNeighbors() {
     ArrayList<Device> neighbors = new ArrayList<Device>();
     for (ConnectionHandler helper : helpers) {
       neighbors.addAll(helper.getNeighbourDevices());
@@ -120,7 +119,7 @@ public class MeshManager {
   }
 
 
-  void send(MeshProtocol<?> protocol, SendListener listener) {
+  public void send(MeshProtocol<?> protocol, SendListener listener) {
     router.sendData(protocol, listener);
   }
 }
