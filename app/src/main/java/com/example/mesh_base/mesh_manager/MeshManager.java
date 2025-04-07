@@ -5,6 +5,7 @@ import android.util.Log;
 
 import com.example.mesh_base.ble.BLEHandler;
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
+import com.example.mesh_base.router.Router;
 
 import java.util.ArrayList;
 import java.util.UUID;
@@ -41,6 +42,7 @@ public class MeshManager {
   private final ArrayList<ConnectionHandler> helpers = new ArrayList<>();
   //TODO: consider accepting uuid from application vs generating one and storing it
   private final UUID id = UUID.randomUUID();
+  private final Router router;
   String TAG = "my_meshManager";
   private MeshBaseListener listener;
 
@@ -73,6 +75,8 @@ public class MeshManager {
             id
     );
     helpers.add(bleHelper);
+
+    router = new Router(helpers, id);
   }
 
   void on(MeshBaseListener listener) {
