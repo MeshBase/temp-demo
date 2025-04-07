@@ -13,23 +13,6 @@ import com.example.mesh_base.router.Router;
 import java.util.ArrayList;
 import java.util.UUID;
 
-class Status {
-  Property ble;
-  Property wifi;
-
-  Status(Property ble, Property wifi) {
-    this.ble = ble;
-    this.wifi = wifi;
-  }
-
-  static class Property {
-    boolean isSupported;
-    boolean isOn;
-    boolean isAllowed;
-  }
-
-}
-
 public class MeshManager {
 
 
@@ -123,6 +106,17 @@ public class MeshManager {
     }
     return neighbors;
   }
+
+  public Status getStatus() {
+    //TODO: consider generating a map instead of changing the Status class whenever a new technology is added
+    return new Status(
+            //TODO: add a method to BLEPermission to know if it is supported
+            new Status.Property(true, bleHelper.isOn(), blePermissions.isEnabled()),
+            //TODO: modify when WIFI Direct is added
+            new Status.Property(false, false, false)
+    );
+  }
+
 
   void send(byte[] data, String address) {
   }
