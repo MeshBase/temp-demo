@@ -8,7 +8,9 @@ import com.example.mesh_base.ble.BLEHandler;
 import com.example.mesh_base.ble.BLEPermissions;
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
 import com.example.mesh_base.global_interfaces.Device;
+import com.example.mesh_base.router.MeshProtocol;
 import com.example.mesh_base.router.Router;
+import com.example.mesh_base.router.SendListener;
 
 import java.util.ArrayList;
 import java.util.UUID;
@@ -118,10 +120,7 @@ public class MeshManager {
   }
 
 
-  void send(byte[] data, String address) {
+  void send(MeshProtocol<?> protocol, SendListener listener) {
+    router.sendData(protocol, listener);
   }
-
-  void send(String data, String address) {
-  }
-
 }
