@@ -1,9 +1,11 @@
 package com.example.mesh_base.mesh_manager;
 
-import android.content.Context;
 import android.util.Log;
 
+import androidx.activity.ComponentActivity;
+
 import com.example.mesh_base.ble.BLEHandler;
+import com.example.mesh_base.ble.BLEPermissions;
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
 import com.example.mesh_base.router.Router;
 
@@ -43,11 +45,14 @@ public class MeshManager {
   //TODO: consider accepting uuid from application vs generating one and storing it
   private final UUID id = UUID.randomUUID();
   private final Router router;
+  //TODO: discuss directly using permission classes vs using them behind connection handlers
+  private final BLEPermissions blePermissions;
+  private final BLEHandler bleHelper;
   String TAG = "my_meshManager";
   private MeshBaseListener listener;
 
-  public MeshManager(Context context) {
-    BLEHandler bleHelper = new BLEHandler(
+  public MeshManager(ComponentActivity context) {
+    bleHelper = new BLEHandler(
             (device) -> {
               Log.d(TAG, "neighbor connected");
             },
@@ -76,14 +81,36 @@ public class MeshManager {
     );
     helpers.add(bleHelper);
 
+    blePermissions = new BLEPermissions(context);
+    blePermissions.setListener(new BLEPermissions.Listener() {
+      @Override
+      public void onEnabled() {
+        try {
+          bleHelper.start();
+        } catch (Exception e) {
+          //TODO: send error to user using a callback
+        }
+      }
+
+      @Override
+      public void onDisabled() {
+        bleHelper.stop();
+      }
+    });
+
     router = new Router(helpers, id);
   }
 
-  void on(MeshBaseListener listener) {
-    this.listener = listener;
+  void on() {
+    //TODO: if having a list of permission classes is possible, loop through them and call .enable()
+    //calling .enable() even if already enabled will call the onEnabled listener, which will call start()
+    blePermissions.enable();
   }
 
   void off() {
+    for (ConnectionHandler helper : helpers) {
+      helper.stop();
+    }
   }
 
   void setAllowedMedium() {
