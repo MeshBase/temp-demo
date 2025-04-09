@@ -7,7 +7,7 @@ import com.example.mesh_base.global_interfaces.Device;
 import java.util.ArrayList;
 
 public abstract class MeshManagerListener {
-  String TAG = "my_meshManager";
+  String TAG = "my_meshManager_listener";
 
   static MeshManagerListener createEmpty() {
     return new MeshManagerListener() {
@@ -40,6 +40,11 @@ public abstract class MeshManagerListener {
       public void onDiscovered(Device device) {
         Log.d(TAG, "[from empty listener] device discovered");
       }
+
+      @Override
+      public void onError(Exception e) {
+        Log.d(TAG, "[from empty listener] error");
+      }
     };
 
   }
@@ -56,4 +61,6 @@ public abstract class MeshManagerListener {
   abstract public void onDisconnected(Device device);
 
   abstract public void onDiscovered(Device device);
+
+  abstract public void onError(Exception e);
 }
