@@ -85,7 +85,9 @@ public class MeshManager {
     router = new Router(helpers, id);
     //TODO: accept protocol instead of byte array once the router's handleOnData is modified, to not cause conflict
     //TODO: consider exposing the protocol itself to users
-    router.setOnReceivedData(listener::onData);
+    router.setOnReceivedData(((data, neighbor) -> {
+      listener.onData(data, neighbor);
+    }));
   }
 
   public UUID getId() {
