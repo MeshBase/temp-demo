@@ -49,6 +49,8 @@ fun BleTestScreen(meshManager: MeshManager) {
         val context = LocalContext.current
         val connectedDevices = remember { mutableStateListOf<Device>() }
         var isOn by remember { mutableStateOf(false) }
+        var bleIsOn by remember { mutableStateOf(false) }
+        var wifiDirectIsOn by remember { mutableStateOf(false) }
 
 
         var message by remember { mutableStateOf("") }
@@ -75,20 +77,15 @@ fun BleTestScreen(meshManager: MeshManager) {
 
                 override fun onStatusChange(status: Status) {
                     isOn = status.isOn
-                    Handler(Looper.getMainLooper()).post({
-                        Toast.makeText(
-                            context,
-                            "new status: ${status.ble.isOn}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    })
+                    bleIsOn = status.ble.isOn
+                    wifiDirectIsOn = status.wifiDirect.isOn
                 }
 
                 override fun onNeighborsChanged(neighbors: ArrayList<Device>) {
                     Handler(Looper.getMainLooper()).post({
                         Toast.makeText(
                             context,
-                            "neighbors changed",
+                            "${neighbors.size} neighbors now",
                             Toast.LENGTH_SHORT
                         ).show()
                     })
@@ -123,6 +120,17 @@ fun BleTestScreen(meshManager: MeshManager) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Text("BleIsOn=$bleIsOn WifiDirectIsOn=$wifiDirectIsOn")
+
+                Button(onClick = {
+                    if (isOn) meshManager.off()
+                    else meshManager.on()
+                }) {
+                    Text(if (isOn) "Turn Off" else "Turn On")
+                }
+
+
+
                 LazyColumn {
                     items(connectedDevices) { device ->
                         Row(
@@ -193,12 +201,6 @@ fun BleTestScreen(meshManager: MeshManager) {
                     }
                 }
 
-                Button(onClick = {
-                    if (isOn) meshManager.off()
-                    else meshManager.on()
-                }) {
-                    Text(if (isOn) "Turn Off" else "Turn On")
-                }
 
                 TextField(
                     value = message,
