@@ -101,14 +101,15 @@ public class MeshManager {
     //calling .enable() even if already enabled should call the onEnabled listener, which will then call start()
     blePermissions.enable();
     isOn = true;
+    listener.onStatusChange(getStatus());
   }
 
   public void off() {
     for (ConnectionHandler helper : helpers) {
       helper.stop();
     }
-    listener.onStatusChange(getStatus());
     isOn = false;
+    listener.onStatusChange(getStatus());
   }
 
   public ArrayList<Device> getNeighbors() {
