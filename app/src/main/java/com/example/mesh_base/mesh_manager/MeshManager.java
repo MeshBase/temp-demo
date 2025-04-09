@@ -71,7 +71,8 @@ public class MeshManager {
           bleHelper.start();
           listener.onStatusChange(getStatus());
         } catch (Exception e) {
-          //TODO: send error to user using a callback
+          //TODO: categorize types of exceptions shown to users, then create classes
+          listener.onError(e);
         }
       }
 
