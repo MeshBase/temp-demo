@@ -2,14 +2,14 @@ package com.example.mesh_base.mesh_manager;
 
 public class Status {
   public Property ble;
-  public Property wifi;
+  public Property wifiDirect;
 
   public boolean isOn;
 
-  Status(boolean isOn, Property ble, Property wifi) {
+  Status(boolean isOn, Property ble, Property wifiDirect) {
     this.isOn = isOn;
     this.ble = ble;
-    this.wifi = wifi;
+    this.wifiDirect = wifiDirect;
   }
 
   public static class Property {

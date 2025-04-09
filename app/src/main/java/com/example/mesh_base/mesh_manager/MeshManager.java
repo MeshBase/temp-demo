@@ -79,6 +79,7 @@ public class MeshManager {
       public void onDisabled() {
         listener.onStatusChange(getStatus());
         bleHelper.stop();
+        listener.onStatusChange(getStatus());
       }
     });
 
