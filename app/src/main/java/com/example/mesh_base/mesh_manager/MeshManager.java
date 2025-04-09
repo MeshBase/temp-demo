@@ -15,6 +15,7 @@ import com.example.mesh_base.router.SendListener;
 import java.util.ArrayList;
 import java.util.UUID;
 
+//TODO: unit test once BLE and WifiDirect have the same interfaces
 public class MeshManager {
 
   private final ArrayList<ConnectionHandler> helpers = new ArrayList<>();
@@ -25,6 +26,7 @@ public class MeshManager {
   private final BLEPermissions blePermissions;
   private final BLEHandler bleHelper;
   String TAG = "my_meshManager";
+  private boolean isOn = false;
   private MeshManagerListener listener = MeshManagerListener.createEmpty();
 
   public MeshManager(ComponentActivity context) {
@@ -43,8 +45,7 @@ public class MeshManager {
               Log.d(TAG, "neighbor discovered");
               listener.onDiscovered(device);
             },
-            //TODO: Remove argument from ConnectionHandler if using BLEPermissions to listen to connection/disconnection events
-            //TODO: Remove device as argument as it is know that THIS device is the one which disconnected
+            //TODO: Consider removing argument from ConnectionHandler if WIFI Direct is also not using it
             (device) -> {
               Log.d(TAG, "disconnected");
             },
@@ -97,8 +98,9 @@ public class MeshManager {
 
   public void on() {
     //TODO: if having a list of permission classes is possible, loop through them and call .enable()
-    //calling .enable() even if already enabled will call the onEnabled listener, which will call start()
+    //calling .enable() even if already enabled should call the onEnabled listener, which will then call start()
     blePermissions.enable();
+    isOn = true;
   }
 
   public void off() {
@@ -106,6 +108,7 @@ public class MeshManager {
       helper.stop();
     }
     listener.onStatusChange(getStatus());
+    isOn = false;
   }
 
   public ArrayList<Device> getNeighbors() {
@@ -117,8 +120,9 @@ public class MeshManager {
   }
 
   public Status getStatus() {
-    //TODO: consider generating a map instead of changing the Status class whenever a new technology is added
+    //TODO: discuss if maps are better to handle this rather than a Status class
     return new Status(
+            isOn,
             //TODO: add a method to BLEPermission to know if it is supported
             new Status.Property(true, bleHelper.isOn(), blePermissions.isEnabled()),
             //TODO: modify when WIFI Direct is added

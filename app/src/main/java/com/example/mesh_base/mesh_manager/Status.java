@@ -4,7 +4,10 @@ public class Status {
   public Property ble;
   public Property wifi;
 
-  Status(Property ble, Property wifi) {
+  public boolean isOn;
+
+  Status(boolean isOn, Property ble, Property wifi) {
+    this.isOn = isOn;
     this.ble = ble;
     this.wifi = wifi;
   }

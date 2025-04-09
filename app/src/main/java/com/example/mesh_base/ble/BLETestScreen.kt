@@ -46,6 +46,7 @@ fun BleTestScreen(meshManager: MeshManager) {
     MeshBaseTheme {
         val context = LocalContext.current
         val connectedDevices = remember { mutableStateListOf<Device>() }
+        var isOn by remember { mutableStateOf(false) }
 
 
         var message by remember { mutableStateOf("") }
@@ -70,6 +71,7 @@ fun BleTestScreen(meshManager: MeshManager) {
                 }
 
                 override fun onStatusChange(status: Status) {
+                    isOn = status.isOn;
                     Handler(Looper.getMainLooper()).post({
                         Toast.makeText(
                             context,
@@ -188,12 +190,20 @@ fun BleTestScreen(meshManager: MeshManager) {
                     }
                 }
 
+                Button(onClick = {
+                    if (isOn) meshManager.off()
+                    else meshManager.on()
+                }) {
+                    Text(if (isOn) "Turn Off" else "Turn On")
+                }
+
                 TextField(
                     value = message,
                     onValueChange = { message = it },
                     label = { Text("Enter message") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
             }
         }
     }
