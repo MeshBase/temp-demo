@@ -106,6 +106,13 @@ fun BleTestScreen(meshManager: MeshManager) {
                     })
                 }
 
+                override fun onError(e: Exception) {
+                    Handler(Looper.getMainLooper()).post({
+                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT)
+                            .show()
+                    })
+                }
+
             }
 
             meshManager.setListener(listener)
