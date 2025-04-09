@@ -2,6 +2,7 @@ package com.example.mesh_base.ble
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,7 @@ import java.util.function.Function
 fun BleTestScreen(meshManager: MeshManager) {
 
     MeshBaseTheme {
+        val TAG = "my_ble_screen"
         val context = LocalContext.current
         val connectedDevices = remember { mutableStateListOf<Device>() }
         var isOn by remember { mutableStateOf(false) }
@@ -55,6 +57,7 @@ fun BleTestScreen(meshManager: MeshManager) {
 
             val listener = object : MeshManagerListener() {
                 override fun onData(data: ByteArray, device: Device) {
+                    Log.d(TAG, "received data")
                     val bodyDecoder =
                         Function { d: ByteArray? -> SendMessageBody.decode(d) }
                     val protocol = MeshProtocol.decode(data, bodyDecoder)
@@ -71,7 +74,7 @@ fun BleTestScreen(meshManager: MeshManager) {
                 }
 
                 override fun onStatusChange(status: Status) {
-                    isOn = status.isOn;
+                    isOn = status.isOn
                     Handler(Looper.getMainLooper()).post({
                         Toast.makeText(
                             context,
