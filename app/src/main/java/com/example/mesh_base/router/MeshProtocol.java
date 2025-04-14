@@ -53,5 +53,27 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
     return buffer.array();
 
   }
+  @Override
+  public boolean equals(Object o){
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    MeshProtocol<?> that = (MeshProtocol<?>) o;
+    
+    return messageType == that.messageType &&
+            remainingHops == that.remainingHops &&
+            messageId == that.messageId &&
+            sender.equals(that.sender) &&
+            body.equals(that.body);
+  }
 
+  @Override
+  public int hashCode(){
+    int result = messageType;
+    result = 31 * result + remainingHops;
+    result = 31 * result + messageId;
+    result = 31 * result + sender.hashCode();
+    result = 31 * result + body.hashCode();
+
+    return result;
+  }
 }

@@ -55,6 +55,7 @@ dependencies {
     implementation(libs.androidx.fragment)
     implementation(libs.androidx.media3.common.ktx)
     implementation(libs.play.services.location)
+    testImplementation(libs.junit.jupiter)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
