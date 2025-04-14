@@ -20,7 +20,7 @@ public class MeshManager {
 
   private final ArrayList<ConnectionHandler> helpers = new ArrayList<>();
   //TODO: store uuid in local storage so that the devices address is consistent
-  private final UUID id = UUID.randomUUID();
+  private final UUID id;
   private final Router router;
   //TODO: discuss directly using permission classes vs using them behind connection handlers
   private final BLEPermissions blePermissions;
@@ -30,6 +30,11 @@ public class MeshManager {
   private MeshManagerListener listener = MeshManagerListener.createEmpty();
 
   public MeshManager(ComponentActivity context) {
+
+    Store store = Store.getInstance(context);
+    if (store.getId() == null) store.storeId(UUID.randomUUID());
+    id = store.getId();
+
     bleHelper = new BLEHandler(
             (device) -> {
               Log.d(TAG, "neighbor connected");
