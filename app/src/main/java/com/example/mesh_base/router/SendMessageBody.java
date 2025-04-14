@@ -1,6 +1,7 @@
 package com.example.mesh_base.router;
 
 import java.nio.ByteBuffer;
+import java.util.Objects;
 import java.util.UUID;
 
 public class SendMessageBody implements MeshSerializer<SendMessageBody> {
@@ -76,5 +77,22 @@ public class SendMessageBody implements MeshSerializer<SendMessageBody> {
 
   public String getMsg() {
     return msg;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+
+    SendMessageBody that = (SendMessageBody) o;
+    return command == that.command &&
+            isBroadcast == that.isBroadcast &&
+            Objects.equals(destination, that.destination) &&
+            Objects.equals(msg, that.msg);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(command, isBroadcast, destination, msg);
   }
 }
