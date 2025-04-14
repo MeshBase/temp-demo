@@ -158,10 +158,10 @@ fun BleTestScreen(meshManager: MeshManager) {
                                         4,
                                         113,
                                         UUID.fromString("dd91a1c8-5f6a-4430-815f-f3e1c8780fc8"),
+                                        device.uuid,
                                         SendMessageBody(
                                             4,
                                             false,
-                                            device.uuid,
                                             message,
                                         )
                                     )
