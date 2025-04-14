@@ -59,8 +59,6 @@ public class BLEPermissions {
           };
 
   private Listener listener = defaultListener;
-  ActivityResultLauncher<String[]> permissionLauncher;
-  ActivityResultLauncher<IntentSenderRequest> locationLauncher;
   ActivityResultCallback<Map<String, Boolean>> permissionsCallback = new ActivityResultCallback<>() {
     @Override
     public void onActivityResult(Map<String, Boolean> o) {
@@ -114,6 +112,8 @@ public class BLEPermissions {
       }
     }
   };
+  ActivityResultLauncher<String[]> permissionLauncher;
+  ActivityResultLauncher<IntentSenderRequest> locationLauncher;
 
 
   public BLEPermissions(ComponentActivity activity) {
@@ -169,7 +169,7 @@ public class BLEPermissions {
   }
 
   public boolean isEnabled() {
-    return hasPermissions() && bluetoothIsOn() & locationIsOn();
+    return hasPermissions() && bluetoothIsOn() && locationIsOn();
   }
 
   public boolean isSupported() {
