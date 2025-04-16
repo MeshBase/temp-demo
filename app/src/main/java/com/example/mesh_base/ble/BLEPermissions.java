@@ -11,6 +11,7 @@ import static android.content.Context.LOCATION_SERVICE;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -58,6 +59,8 @@ public class BLEPermissions {
           };
 
   private Listener listener = defaultListener;
+  ActivityResultLauncher<String[]> permissionLauncher;
+  ActivityResultLauncher<IntentSenderRequest> locationLauncher;
   ActivityResultCallback<Map<String, Boolean>> permissionsCallback = new ActivityResultCallback<>() {
     @Override
     public void onActivityResult(Map<String, Boolean> o) {
@@ -111,8 +114,6 @@ public class BLEPermissions {
       }
     }
   };
-  ActivityResultLauncher<String[]> permissionLauncher;
-  ActivityResultLauncher<IntentSenderRequest> locationLauncher;
 
 
   public BLEPermissions(ComponentActivity activity) {
@@ -144,11 +145,17 @@ public class BLEPermissions {
     if (listener == defaultListener) {
       throw new RuntimeException("please set a listener first before calling enable on BLE Permissions");
     }
+
     //TODO: handle permanent denial of permissions
     if (isEnabled()) {
       listener.onEnabled();
       return;
     }
+    if (!isSupported()) {
+      Log.e(TAG, "bluetooth is not supported, ignoring enable() call");
+      return;
+    }
+
     Log.d(TAG, "trying to enable bluetooth and its permissions");
     //permissions first, then bluetooth, then location so users see the reasoning better
     if (!hasPermissions()) {
@@ -159,6 +166,17 @@ public class BLEPermissions {
     } else if (!locationIsOn()) {
       promptLocation();
     }
+  }
+
+  public boolean isEnabled() {
+    return hasPermissions() && bluetoothIsOn() && locationIsOn();
+  }
+
+  public boolean isSupported() {
+    BluetoothManager bluetoothManager = activity.getSystemService(BluetoothManager.class);
+    if (bluetoothManager == null) return false;
+    BluetoothAdapter bluetoothAdapter = bluetoothManager.getAdapter();
+    return bluetoothAdapter != null;
   }
 
   private String[] getPermissions() {
@@ -241,9 +259,6 @@ public class BLEPermissions {
     }
   }
 
-  public boolean isEnabled() {
-    return hasPermissions() && bluetoothIsOn() & locationIsOn();
-  }
 
   @SuppressLint("MissingPermission")
   private void promptBluetooth() {

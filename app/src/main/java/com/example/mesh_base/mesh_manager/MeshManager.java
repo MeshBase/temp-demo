@@ -128,8 +128,7 @@ public class MeshManager {
     //TODO: discuss if maps are better to handle this rather than a Status class
     return new Status(
             isOn,
-            //TODO: add a method to BLEPermission to know if it is supported
-            new Status.Property(true, bleHelper.isOn(), blePermissions.isEnabled()),
+            new Status.Property(blePermissions.isSupported(), bleHelper.isOn(), blePermissions.isEnabled()),
             //TODO: modify when WIFI Direct is added
             new Status.Property(false, false, false)
     );
