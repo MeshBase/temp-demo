@@ -1,45 +1,82 @@
 package com.example.mesh_base.global_interfaces;
 
 
+import android.content.Context;
+
 import java.util.ArrayList;
+import java.util.UUID;
 
 
 //TODO: add isOn(), isOff(), isEnabled() status
 public abstract class ConnectionHandler {
 
-  protected NeighborDisconnectedListener neighborDisconnectedListener;
-  protected NeighborConnectedListener neighborConnectedListener;
-  protected NeighborDiscoveredListener neighborDiscoveredListener;
-  protected DisconnectedListener disconnectedListener;
-  protected DataListener dataListener;
-  protected NearbyDevicesListener nearbyDevicesListener;
+    protected ArrayList<ConnectionHandlerListener> connectionHandlerListeners = new ArrayList<>();
+    protected Context context;
+    protected UUID id;
 
-  public ConnectionHandler(NeighborConnectedListener neighborConnectedListener, NeighborDisconnectedListener neighborDisconnectedListener, NeighborDiscoveredListener neighborDiscoveredListener, DisconnectedListener disconnectedListener, DataListener dataListener, NearbyDevicesListener nearbyDevicesListener) {
-    this.neighborConnectedListener = neighborConnectedListener;
-    this.neighborDisconnectedListener = neighborDisconnectedListener;
-    this.neighborDiscoveredListener = neighborDiscoveredListener;
-    this.disconnectedListener = disconnectedListener;
-    this.dataListener = dataListener;
-    this.nearbyDevicesListener = nearbyDevicesListener;
-  }
+    public ConnectionHandler(Context context, UUID id) {
+        this.context = context;
+        this.id = id;
+    }
 
-  //TODO: append listeners instead of replacing them so that both Router and MeshManager can listen
-  public void setDataListener(DataListener dataListener) {
-    this.dataListener = dataListener;
-  }
+    public void subscribe(ConnectionHandlerListener connectionHandlerListener) {
+        this.connectionHandlerListeners.add(connectionHandlerListener);
+    }
 
-  public abstract ArrayList<Device> getNeighbourDevices();
-
-  public abstract void start() throws Exception;
-
-  public abstract void stop();
+    public void unSubscribe(ConnectionHandlerListener connectionHandlerListener) {
+        this.connectionHandlerListeners.remove(connectionHandlerListener);
+    }
 
 
-  public abstract boolean isOn();
+    public abstract ArrayList<Device> getNeighbourDevices();
 
-  public abstract ArrayList<Device> getNearbyDevices();
+    public abstract void start() throws Exception;
 
-  public abstract void send(byte[] data) throws SendError; //Send to all neighbors
+    public abstract void stop();
 
-  public abstract void send(byte[] data, Device neighbor) throws SendError; //Send through a specific neighbor
+    public abstract boolean isOn();
+
+    public abstract void send(byte[] data) throws SendError; //Send to all neighbors
+
+    public abstract void send(byte[] data, Device neighbor) throws SendError; //Send through a specific neighbor
+
+    public abstract void enable();
+
+
+    protected void onNeighborConnected(Device device) {
+        for (ConnectionHandlerListener listener : connectionHandlerListeners) {
+            listener.onNeighborConnected(device);
+        }
+    }
+
+
+    protected void onNeighborDisconnected(Device device) {
+        for (ConnectionHandlerListener listener : connectionHandlerListeners) {
+            listener.onNeighborDisconnected(device);
+        }
+    }
+
+
+    protected void onDisconnected() {
+        for (ConnectionHandlerListener listener : connectionHandlerListeners) {
+            listener.onDisconnected();
+        }
+
+    }
+
+
+    protected void onConnected() {
+        for (ConnectionHandlerListener listener : connectionHandlerListeners) {
+            listener.onConnected();
+        }
+    }
+
+
+    protected void onDataReceived(Device device, byte[] data) {
+        for (ConnectionHandlerListener listener : connectionHandlerListeners) {
+            listener.onDataReceived(device, data);
+        }
+    }
+
+
 }

@@ -59,7 +59,7 @@ fun BleTestScreen(meshManager: MeshManager) {
         LaunchedEffect(Unit) {
 
             val listener = object : MeshManagerListener() {
-                override fun onData(data: ByteArray, device: Device) {
+                override fun onDataReceivedForSelf(data: ByteArray, device: Device) {
                     Log.d(TAG, "received data")
                     val bodyDecoder =
                         Function { d: ByteArray? -> SendMessageBody.decode(d) }
@@ -92,15 +92,15 @@ fun BleTestScreen(meshManager: MeshManager) {
                     })
                 }
 
-                override fun onConnected(device: Device) {
+                override fun onNeighborConnected(device: Device) {
                     connectedDevices.add(device)
                 }
 
-                override fun onDisconnected(device: Device?) {
+                override fun onNeighborDisconnected(device: Device?) {
                     connectedDevices.remove(device)
                 }
 
-                override fun onDiscovered(device: Device) {
+                override fun onNeighborDiscovered(device: Device) {
                     Handler(Looper.getMainLooper()).post({
                         Toast.makeText(context, "Discovered: ${device.name}", Toast.LENGTH_SHORT)
                             .show()
