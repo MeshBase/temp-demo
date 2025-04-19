@@ -13,8 +13,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        //Initialized here specifically so that new BLEPermission() works properly. It works only when called inside onCreate
         meshManager = MeshManager(this)
 
         setContent {

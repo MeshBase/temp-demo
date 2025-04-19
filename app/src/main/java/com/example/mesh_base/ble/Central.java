@@ -1,6 +1,6 @@
 package com.example.mesh_base.ble;
 
-import static com.example.mesh_base.ble.BLEHandler.CTRL;
+import static com.example.mesh_base.ble.BLEConnectionHandler.CTRL;
 import static com.example.mesh_base.ble.CommonConstants.CCCD_UUID;
 import static com.example.mesh_base.ble.CommonConstants.MESSAGE_UUID;
 import static com.example.mesh_base.ble.CommonConstants.SERVICE_UUID;
@@ -38,14 +38,14 @@ public class Central {
   private final HashMap<String, BluetoothDevice> connectingDevices = new HashMap<>();
   private final Map<UUID, BluetoothGatt> connectedDevices = new HashMap<>();
   private final HashSet<String> scanResultAddresses = new HashSet<>();
-  private final BLEHandler handler;
+  private final BLEConnectionHandler handler;
   CentralBLEEventHandler eventHandler;
   private BluetoothLeScanner scanner;
   private boolean isOn = false;
   private boolean isScanning = false;
   private long lastScanTime = 0;
 
-  Central(BLEHandler handler) {
+  Central(BLEConnectionHandler handler) {
     this.handler = handler;
     this.TAG = handler.TAG + CTRL;
     this.eventHandler = new CentralBLEEventHandler(this);
@@ -75,7 +75,7 @@ public class Central {
     return connectTryCount;
   }
 
-  BLEHandler getBLEHandler() {
+  BLEConnectionHandler getBLEHandler() {
     return handler;
   }
 

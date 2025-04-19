@@ -27,7 +27,7 @@ public class Peripheral {
   private final HashMap<String, BluetoothDevice> connectingDevices = new HashMap<>();
   private final HashMap<UUID, BluetoothDevice> connectedDevices = new HashMap<>();
   private final String TAG;
-  private final BLEHandler handler;
+  private final BLEConnectionHandler handler;
   private final PeripheralBLEEventHandler eventHandler;
   private boolean isOn = false;
   private BluetoothGattServer server;
@@ -35,9 +35,9 @@ public class Peripheral {
   private BluetoothGattCharacteristic messageCharacteristic;
   private BluetoothGattDescriptor messageDescriptor;
 
-  Peripheral(BLEHandler handler) {
+  Peripheral(BLEConnectionHandler handler) {
     this.handler = handler;
-    this.TAG = handler.TAG + BLEHandler.PRFL;
+    this.TAG = handler.TAG + BLEConnectionHandler.PRFL;
     this.eventHandler = new PeripheralBLEEventHandler(this);
   }
 
@@ -49,7 +49,7 @@ public class Peripheral {
     return connectedDevices.get(id);
   }
 
-  BLEHandler getBLEHandler() {
+  BLEConnectionHandler getBLEHandler() {
     return handler;
   }
 
