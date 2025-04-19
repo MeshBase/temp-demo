@@ -102,6 +102,16 @@ public class Router {
         handleOnAck(protocol.messageId);
       } else {
         onReceivedData.onEvent(byteArray, neighbor);
+        AckMessageBody ackMessageBody = new AckMessageBody("OK");
+        MeshProtocol<AckMessageBody> ackData = new ConcreteMeshProtocol<>(
+                0, // Message Type is ACK
+                4, // Goes to 4 device before stopping
+                protocol.messageId, // same as the message id the protocol came with
+                protocol.destination, // Destination becomes sender
+                protocol.sender, // Sender becomes Destination
+                ackMessageBody // Sends back 'OK'
+        );
+        sendData(ackData, getListenerOrError(protocol.messageId));
       }
     } else if (hasRoutedDataBefore(protocol.messageId, protocol.sender)) {
       Log.d(TAG, "already routed data. skipping. messageId=" + protocol.messageId + " sender=" + protocol.sender);
