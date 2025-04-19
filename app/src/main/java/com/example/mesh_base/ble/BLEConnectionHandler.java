@@ -40,7 +40,20 @@ public class BLEConnectionHandler extends ConnectionHandler {
 
         this.central = new Central(this);
         this.peripheral = new Peripheral(this);
-        this.permission = new BLEPermissions(context);
+
+        this.permission = new BLEPermissions(context, new BLEPermissions.Listener() {
+            @Override
+            public void onEnabled() {
+                Log.d(TAG, "Permission Enabled");
+                start();
+            }
+
+            @Override
+            public void onDisabled() {
+                Log.d(TAG, "Permission Disabled");
+                stop();
+            }
+        });
     }
 
     @Override
@@ -295,7 +308,7 @@ public class BLEConnectionHandler extends ConnectionHandler {
 
 
     @Override
-    public void start() throws Exception {
+    public void start() {
         central.start();
         peripheral.start();
     }

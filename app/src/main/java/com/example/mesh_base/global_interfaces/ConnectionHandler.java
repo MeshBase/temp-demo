@@ -77,6 +77,4 @@ public abstract class ConnectionHandler {
             listener.onDataReceived(device, data);
         }
     }
-
-
 }

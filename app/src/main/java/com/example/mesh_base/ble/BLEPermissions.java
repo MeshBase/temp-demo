@@ -56,7 +56,6 @@ public class BLEPermissions {
             Log.d(TAG, "BLE disabled (listener not set yet)");
         }
     };
-
     private Listener listener = defaultListener;
     ActivityResultLauncher<String[]> permissionLauncher;
     ActivityResultLauncher<IntentSenderRequest> locationLauncher;
@@ -112,8 +111,9 @@ public class BLEPermissions {
     };
 
 
-    public BLEPermissions(ComponentActivity activity) {
+    public BLEPermissions(ComponentActivity activity, Listener listener) {
         this.activity = activity;
+        this.listener = listener;
 
         //setup permissions
         permissionLauncher = activity.registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), permissionsCallback);

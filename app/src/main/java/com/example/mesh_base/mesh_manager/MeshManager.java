@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity;
 
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
 import com.example.mesh_base.global_interfaces.ConnectionHandlerFactory;
+import com.example.mesh_base.global_interfaces.ConnectionHandlerListener;
 import com.example.mesh_base.global_interfaces.ConnectionHandlersEnum;
 import com.example.mesh_base.global_interfaces.Device;
 import com.example.mesh_base.router.MeshProtocol;
@@ -30,8 +31,42 @@ public class MeshManager {
         id = store.getId();
 
         ConnectionHandlerFactory factory = new ConnectionHandlerFactory();
+
+        // TODO: Check for user connection handler preference
         for (ConnectionHandlersEnum _enum : ConnectionHandlersEnum.values()) {
-            connectionHandlers.put(_enum, factory.createConnectionHandler(_enum, context, id, listener));
+            ConnectionHandler connectionHandler = factory.createConnectionHandler(_enum, context, id);
+            connectionHandlers.put(_enum, connectionHandler);
+            connectionHandler.subscribe(
+                    new ConnectionHandlerListener() {
+                        @Override
+                        public void onNeighborConnected(Device device) {
+                            listener.onNeighborConnected(device);
+                        }
+
+                        @Override
+                        public void onNeighborDisconnected(Device device) {
+                            listener.onNeighborDisconnected(device);
+                        }
+
+                        @Override
+                        public void onDisconnected() {
+                            listener.onStatusChange(getStatus());
+                        }
+
+                        @Override
+                        public void onConnected() {
+                            // TODO: change status
+                            listener.onStatusChange(getStatus());
+                        }
+
+                        @Override
+                        public void onDataReceived(Device device, byte[] data) {
+                            if (device.uuid == id) {
+                                listener.onDataReceivedForSelf(data);
+                            }
+                        }
+                    }
+            );
         }
 
         router = new Router(connectionHandlers, id);
@@ -51,13 +86,10 @@ public class MeshManager {
     }
 
     public void on() {
-        //TODO: if having a list of permission classes is possible, loop through them and call .enable()
-        //calling .enable() even if already enabled should call the onEnabled listener, which will then call start()
         for (ConnectionHandler connectionHandler : connectionHandlers.values()) {
             connectionHandler.enable();
         }
         isOn = true;
-        listener.onStatusChange(getStatus());
     }
 
     public void off() {
@@ -65,7 +97,6 @@ public class MeshManager {
             helper.stop();
         }
         isOn = false;
-        listener.onStatusChange(getStatus());
     }
 
     public ArrayList<Device> getNeighbors() {
