@@ -22,7 +22,7 @@ import java.util.UUID;
 
 @SuppressLint("MissingPermission")
 class CentralBLEEventHandler {
-  BLEHandler handler;
+  BLEConnectionHandler handler;
   Central central;
   String TAG;
   private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
