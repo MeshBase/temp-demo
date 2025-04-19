@@ -16,7 +16,7 @@ public abstract class MeshManagerListener {
 
             @Override
             public void onStatusChange(Status status) {
-                Log.d(TAG, "[from empty listener] status changed");
+                Log.d(TAG, "[from empty listener] status changed" + status.toString());
             }
 
             @Override
@@ -34,7 +34,6 @@ public abstract class MeshManagerListener {
                 Log.d(TAG, "[from empty listener] error");
             }
         };
-
     }
 
     // Is going to be called only when the received data destination matches the current
