@@ -33,7 +33,7 @@ public class RouterUnitTest {
     ArrayList<ConnectionHandler> handlers = new ArrayList<>();
     handlers.add(handler);
     Router router = new Router(handlers, id);
-    MeshProtocol<SendMessageBody> protocol = new ConcreteMeshProtocol<>(1, -1, -1, id, new SendMessageBody(4, false, devices.get(0).uuid, "hello world"));
+    MeshProtocol<SendMessageBody> protocol = new ConcreteMeshProtocol<>(1, -1, -1, id,devices.get(0).uuid, new SendMessageBody(4, false,  "hello world"));
 
     //Perfect path
     router.sendData(protocol, mock(SendListener.class));

@@ -81,13 +81,38 @@ public class Router {
   }
 
   private void handleOnData(Device neighbor, byte[] byteArray) {
-    //TODO: clarify the way to know the body type before decoding the body. Assuming send message for now
-    MeshProtocol<SendMessageBody> protocol = MeshProtocol.decode(byteArray, SendMessageBody::decode);
-    if (protocol.body.getDestination().equals(id)) {
+    MeshProtocol<?> protocol;
+    ProtocolType messageProtocolType = MeshProtocol.getByteType(byteArray);
+
+    switch (messageProtocolType) {
+      case ACK:
+        protocol = MeshProtocol.decode(byteArray, AckMessageBody::decode);
+        break;
+      case SEND_MESSAGE:
+        protocol = MeshProtocol.decode(byteArray, SendMessageBody::decode);
+        break;
+      default:
+        Log.e(TAG, "Unknown byte array. Can't decode data");
+        return;
+    }
+    if (protocol.destination.equals(id)) {
       //TODO: prevent user from receiving the message twice, but keep now for testing purposes
       //TODO: if the data was a response to a sent message, use handleOnResponse() instead of onReceivedData() - when Header-only decoding is implemented
-      //TODO: if the data was an ack, use handleOnAck() instead of onReceivedData() - when Header-only decoding is implemented
-      onReceivedData.onEvent(byteArray, neighbor);
+      if (messageProtocolType == ProtocolType.ACK) {
+        handleOnAck(protocol.messageId);
+      } else {
+        onReceivedData.onEvent(byteArray, neighbor);
+        AckMessageBody ackMessageBody = new AckMessageBody("OK");
+        MeshProtocol<AckMessageBody> ackData = new ConcreteMeshProtocol<>(
+                0, // Message Type is ACK
+                4, // Goes to 4 device before stopping
+                protocol.messageId, // same as the message id the protocol came with
+                protocol.destination, // Destination becomes sender
+                protocol.sender, // Sender becomes Destination
+                ackMessageBody // Sends back 'OK'
+        );
+        sendData(ackData, getListenerOrError(protocol.messageId));
+      }
     } else if (hasRoutedDataBefore(protocol.messageId, protocol.sender)) {
       Log.d(TAG, "already routed data. skipping. messageId=" + protocol.messageId + " sender=" + protocol.sender);
     } else if (protocol.remainingHops <= 0) {
@@ -122,6 +147,7 @@ public class Router {
     //TODO: think on how to remove listener if no other response is expected
     SendListener listener = getListenerOrError(messageId);
     listener.onAck();
+    listeners.remove(messageId);
   }
 
   private SendListener getListenerOrError(int messageId) {
