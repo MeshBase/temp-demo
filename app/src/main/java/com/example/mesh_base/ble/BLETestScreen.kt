@@ -51,6 +51,7 @@ fun BleTestScreen(meshManager: MeshManager) {
         var isOn by remember { mutableStateOf(false) }
         var bleIsOn by remember { mutableStateOf(false) }
         var wifiDirectIsOn by remember { mutableStateOf(false) }
+        var id = meshManager.id.toString()
 
 
         var message by remember { mutableStateOf("") }
@@ -127,7 +128,7 @@ fun BleTestScreen(meshManager: MeshManager) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("BleIsOn=$bleIsOn WifiDirectIsOn=$wifiDirectIsOn")
+                Text("BleIsOn=$bleIsOn WifiDirectIsOn=$wifiDirectIsOn UUID=$id")
 
                 Button(onClick = {
                     if (isOn) meshManager.off()
