@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.mesh_base.global_interfaces.ConnectionHandlersEnum
 import com.example.mesh_base.global_interfaces.Device
 import com.example.mesh_base.global_interfaces.SendError
 import com.example.mesh_base.mesh_manager.MeshManager
@@ -56,10 +57,11 @@ fun BleTestScreen(meshManager: MeshManager) {
 
         var message by remember { mutableStateOf("") }
 
+
         LaunchedEffect(Unit) {
 
             val listener = object : MeshManagerListener() {
-                override fun onDataReceivedForSelf(data: ByteArray, device: Device) {
+                override fun onDataReceivedForSelf(data: ByteArray) {
                     Log.d(TAG, "received data")
                     val bodyDecoder =
                         Function { d: ByteArray? -> SendMessageBody.decode(d) }
@@ -70,7 +72,7 @@ fun BleTestScreen(meshManager: MeshManager) {
                             context,
                             "Received: ${
                                 protocol.body.msg
-                            } \nfrom device with uuid=${protocol.sender} \nthrough neighbor=${device.name}",
+                            } \nfrom device with uuid=${protocol.sender}",
                             Toast.LENGTH_SHORT
                         ).show()
                     })
@@ -78,18 +80,10 @@ fun BleTestScreen(meshManager: MeshManager) {
 
                 override fun onStatusChange(status: Status) {
                     isOn = status.isOn
-                    bleIsOn = status.ble.isOn
-                    wifiDirectIsOn = status.wifiDirect.isOn
-                }
-
-                override fun onNeighborsChanged(neighbors: ArrayList<Device>) {
-                    Handler(Looper.getMainLooper()).post({
-                        Toast.makeText(
-                            context,
-                            "${neighbors.size} neighbors now",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    })
+                    bleIsOn =
+                        status.connectionStatuses.get(ConnectionHandlersEnum.BLE)?.isOn == true;
+                    wifiDirectIsOn =
+                        status.connectionStatuses.get(ConnectionHandlersEnum.WifiDirect)?.isOn == true;
                 }
 
                 override fun onNeighborConnected(device: Device) {
@@ -98,13 +92,6 @@ fun BleTestScreen(meshManager: MeshManager) {
 
                 override fun onNeighborDisconnected(device: Device?) {
                     connectedDevices.remove(device)
-                }
-
-                override fun onNeighborDiscovered(device: Device) {
-                    Handler(Looper.getMainLooper()).post({
-                        Toast.makeText(context, "Discovered: ${device.name}", Toast.LENGTH_SHORT)
-                            .show()
-                    })
                 }
 
                 override fun onError(e: Exception) {
