@@ -52,7 +52,7 @@ fun BleTestScreen(meshManager: MeshManager) {
         var isOn by remember { mutableStateOf(false) }
         var bleIsOn by remember { mutableStateOf(false) }
         var wifiDirectIsOn by remember { mutableStateOf(false) }
-        var id = meshManager.id.toString()
+        val id = meshManager.id.toString()
 
 
         var message by remember { mutableStateOf("") }
@@ -81,9 +81,9 @@ fun BleTestScreen(meshManager: MeshManager) {
                 override fun onStatusChange(status: Status) {
                     isOn = status.isOn
                     bleIsOn =
-                        status.connectionStatuses.get(ConnectionHandlersEnum.BLE)?.isOn == true;
+                        status.connectionStatuses.get(ConnectionHandlersEnum.BLE)?.isOn == true
                     wifiDirectIsOn =
-                        status.connectionStatuses.get(ConnectionHandlersEnum.WifiDirect)?.isOn == true;
+                        status.connectionStatuses.get(ConnectionHandlersEnum.WifiDirect)?.isOn == true
                 }
 
                 override fun onNeighborConnected(device: Device) {
