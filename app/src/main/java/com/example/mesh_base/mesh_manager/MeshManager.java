@@ -33,7 +33,7 @@ public class MeshManager {
         ConnectionHandlerFactory factory = new ConnectionHandlerFactory();
 
         // TODO: Check for user connection handler preference
-        for (ConnectionHandlersEnum _enum : ConnectionHandlersEnum.implementedHandlers) {
+        for (ConnectionHandlersEnum _enum : ConnectionHandlersEnum.values()) {
             ConnectionHandler connectionHandler = factory.createConnectionHandler(_enum, context, id);
             connectionHandlers.put(_enum, connectionHandler);
             connectionHandler.subscribe(
