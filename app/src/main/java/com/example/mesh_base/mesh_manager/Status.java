@@ -1,23 +1,28 @@
 package com.example.mesh_base.mesh_manager;
 
+import com.example.mesh_base.global_interfaces.ConnectionHandlersEnum;
+
+import java.util.HashMap;
+
 public class Status {
-  private final Property ble;
-  private final Property wifiDirect;
-
   private final boolean isOn;
+  private final HashMap<ConnectionHandlersEnum, Property> connectionStatuses;
 
-  Status(boolean isOn, Property ble, Property wifiDirect) {
+  Status(boolean isOn, HashMap<ConnectionHandlersEnum, Property> connections) {
     this.isOn = isOn;
-    this.ble = ble;
-    this.wifiDirect = wifiDirect;
+    this.connectionStatuses = connections;
   }
 
-  public Property getBle() {
-    return ble;
+  public HashMap<ConnectionHandlersEnum, Property> getStatus() {
+    return connectionStatuses;
   }
 
-  public Property getWifiDirect() {
-    return wifiDirect;
+  public Property getStatus(ConnectionHandlersEnum connectionType) {
+    return connectionStatuses.get(connectionType);
+  }
+
+  public HashMap<ConnectionHandlersEnum, Property> getConnectionStatuses() {
+    return connectionStatuses;
   }
 
   public boolean isOn() {

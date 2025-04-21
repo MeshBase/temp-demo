@@ -24,7 +24,7 @@ import java.util.UUID;
 @SuppressLint("MissingPermission")
 public class PeripheralBLEEventHandler {
 
-  BLEHandler handler;
+  BLEConnectionHandler handler;
   Peripheral peripheral;
   String TAG;
   private final BluetoothGattServerCallback serverCallback = new BluetoothGattServerCallback() {

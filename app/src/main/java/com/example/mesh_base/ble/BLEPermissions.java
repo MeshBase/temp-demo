@@ -45,34 +45,29 @@ public class BLEPermissions {
   private final String TAG = "my_BlePermissions";
 
   private final ComponentActivity activity;
-  private final Listener defaultListener =
-          new Listener() {
-            @Override
-            public void onEnabled() {
-              Log.d(TAG, "BLE enabled (listener not set yet)");
-            }
+  private final Listener defaultListener = new Listener() {
+    @Override
+    public void onEnabled() {
+      Log.d(TAG, "BLE enabled (listener not set yet)");
+    }
 
-            @Override
-            public void onDisabled() {
-              Log.d(TAG, "BLE disabled (listener not set yet)");
-            }
-          };
-
+    @Override
+    public void onDisabled() {
+      Log.d(TAG, "BLE disabled (listener not set yet)");
+    }
+  };
   private Listener listener = defaultListener;
   ActivityResultLauncher<String[]> permissionLauncher;
   ActivityResultLauncher<IntentSenderRequest> locationLauncher;
-  ActivityResultCallback<Map<String, Boolean>> permissionsCallback = new ActivityResultCallback<>() {
-    @Override
-    public void onActivityResult(Map<String, Boolean> o) {
-      if (!hasPermissions()) {
-        Log.d(TAG, "Permission not granted");
-        listener.onDisabled();
-      } else if (isEnabled()) {
-        Log.d(TAG, "Permission granted");
-        listener.onEnabled();
-      } else {
-        enable();
-      }
+  ActivityResultCallback<Map<String, Boolean>> permissionsCallback = o -> {
+    if (!hasPermissions()) {
+      Log.d(TAG, "Permission not granted");
+      listener.onDisabled();
+    } else if (isEnabled()) {
+      Log.d(TAG, "Permission granted");
+      listener.onEnabled();
+    } else {
+      enable();
     }
   };
   BroadcastReceiver locationCallback = new BroadcastReceiver() {
@@ -116,12 +111,12 @@ public class BLEPermissions {
   };
 
 
-  public BLEPermissions(ComponentActivity activity) {
+  public BLEPermissions(ComponentActivity activity, Listener listener) {
     this.activity = activity;
+    this.listener = listener;
 
     //setup permissions
     permissionLauncher = activity.registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), permissionsCallback);
-
 
     //setup bluetooth
     IntentFilter bluetoothFilter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
@@ -145,17 +140,16 @@ public class BLEPermissions {
     if (listener == defaultListener) {
       throw new RuntimeException("please set a listener first before calling enable on BLE Permissions");
     }
-
     //TODO: handle permanent denial of permissions
     if (isEnabled()) {
       listener.onEnabled();
       return;
     }
+
     if (!isSupported()) {
       Log.e(TAG, "bluetooth is not supported, ignoring enable() call");
       return;
     }
-
     Log.d(TAG, "trying to enable bluetooth and its permissions");
     //permissions first, then bluetooth, then location so users see the reasoning better
     if (!hasPermissions()) {
@@ -166,10 +160,6 @@ public class BLEPermissions {
     } else if (!locationIsOn()) {
       promptLocation();
     }
-  }
-
-  public boolean isEnabled() {
-    return hasPermissions() && bluetoothIsOn() && locationIsOn();
   }
 
   public boolean isSupported() {
@@ -259,6 +249,9 @@ public class BLEPermissions {
     }
   }
 
+  public boolean isEnabled() {
+    return hasPermissions() && bluetoothIsOn() && locationIsOn();
+  }
 
   @SuppressLint("MissingPermission")
   private void promptBluetooth() {

@@ -10,14 +10,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import androidx.activity.ComponentActivity;
+
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
-import com.example.mesh_base.global_interfaces.DataListener;
 import com.example.mesh_base.global_interfaces.Device;
-import com.example.mesh_base.global_interfaces.DisconnectedListener;
-import com.example.mesh_base.global_interfaces.NearbyDevicesListener;
-import com.example.mesh_base.global_interfaces.NeighborConnectedListener;
-import com.example.mesh_base.global_interfaces.NeighborDisconnectedListener;
-import com.example.mesh_base.global_interfaces.NeighborDiscoveredListener;
 import com.example.mesh_base.global_interfaces.SendError;
 
 import java.util.AbstractQueue;
@@ -27,30 +23,92 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 
-public class BLEHandler extends ConnectionHandler {
-
-
+public class BLEConnectionHandler extends ConnectionHandler {
   static final String CTRL = "central: ";
   static final String PRFL = "peripheral:";
   final String TAG = "my_bleHandler";
-  private final UUID id;
-  private final Context context;
   private final ConcurrentLinkedQueue<BLETask> queue = new ConcurrentLinkedQueue<>();
   private final HashMap<UUID, BLEDevice> connectedDevices = new HashMap<>();
+  private final BLEPermissions permission;
   Central central;
   Peripheral peripheral;
   private BLETask pendingTask = null;
 
-
   //TODO: use BLE Permissions to notify connected and disconnected
-  public BLEHandler(NeighborConnectedListener neighborConnectedListener, NeighborDisconnectedListener neighborDisconnectedListener, NeighborDiscoveredListener neighborDiscoveredListener, DisconnectedListener disconnectedListener, DataListener dataListener, NearbyDevicesListener nearbyDevicesListener, Context context, UUID id) {
-    super(neighborConnectedListener, neighborDisconnectedListener, neighborDiscoveredListener, disconnectedListener, dataListener, nearbyDevicesListener);
-    this.context = context;
-    this.id = id;
+  public BLEConnectionHandler(ComponentActivity context, UUID id) {
+    super(context, id);
+
     this.central = new Central(this);
     this.peripheral = new Peripheral(this);
+
+    this.permission = new BLEPermissions(context, new BLEPermissions.Listener() {
+      @Override
+      public void onEnabled() {
+        Log.d(TAG, "Permission Enabled");
+        start();
+      }
+
+      @Override
+      public void onDisabled() {
+        Log.d(TAG, "Permission Disabled");
+        stop();
+      }
+    });
   }
 
+  @Override
+  public void send(byte[] data) throws SendError {
+    for (Device neighbor : getNeighbourDevices()) {
+      send(data, neighbor);
+    }
+  }
+
+  @SuppressLint("MissingPermission")
+  @Override
+  public void send(byte[] data, Device neighbor) throws SendError {
+
+    if (!connectedDevices.containsKey(neighbor.uuid)) {
+      Log.w(TAG, "wanted to send to " + neighbor.uuid + " but neighbor not connected");
+      return;
+    }
+
+    BluetoothGatt gatt = central.getPeripheral(neighbor.uuid);
+    BluetoothDevice centralDevice = peripheral.getCentral(neighbor.uuid);
+    if (gatt == null && centralDevice == null) {
+      Log.w(TAG, "device exists, but not found in connectedCentrals nor connectedPeripherals!" + neighbor.name + neighbor.uuid);
+      return;
+    }
+
+    if (gatt != null) {
+      BluetoothGattCharacteristic characteristic = central.getMessageCharacteristic(gatt);
+      addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3, neighbor.uuid));
+    } else {
+      addToQueue(new IndicateCharacteristic(3, peripheral.getMessageCharacteristic(), data, centralDevice));
+    }
+
+    if (pendingTask instanceof Scan) {
+      Log.d(TAG + CTRL, "ending scan to write quickly");
+      central.stopScan();
+      addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
+      taskEnded();
+    }
+  }
+
+  @Override
+  public void enable() {
+    this.permission.enable();
+  }
+
+  @Override
+  public boolean isEnabled() {
+    return permission.isEnabled();
+  }
+
+
+  @Override
+  public boolean isSupported() {
+    return permission.isSupported();
+  }
 
   BLETask getPending() {
     return pendingTask;
@@ -102,7 +160,6 @@ public class BLEHandler extends ConnectionHandler {
       if (pendingTask == null) startNextTask();
     }
   }
-
 
   private void startNextTask() {
     synchronized (queue) {
@@ -229,32 +286,28 @@ public class BLEHandler extends ConnectionHandler {
 
     BLEDevice device = new BLEDevice(uuid, name, address);
     connectedDevices.put(uuid, device);
-    neighborConnectedListener.onEvent(device);
-    nearbyDevicesListener.onEvent(getNearbyDevices());
+    onNeighborConnected(device);
   }
 
   void notifyDisconnect(UUID uuid) {
     if (uuid == null) return;
     if (!connectedDevices.containsKey(uuid)) return;
 
-    neighborDisconnectedListener.onEvent(connectedDevices.get(uuid));
+    onNeighborDisconnected(connectedDevices.get(uuid));
     connectedDevices.remove(uuid);
-    nearbyDevicesListener.onEvent(getNearbyDevices());
   }
 
   void notifyData(UUID uuid, byte[] data) {
     if (connectedDevices.containsKey(uuid)) {
       BLEDevice device = connectedDevices.get(uuid);
-      dataListener.onEvent(data, device);
+      onDataReceived(device, data);
     } else {
       Log.w(TAG, "wanted to notify onData() but " + uuid + " is not connected");
     }
   }
 
   void notifyDiscovered(String address, String name) {
-    //TODO: perhaps create another Device class that doesn't have uuid
-    neighborDiscoveredListener.onEvent(new BLEDevice(null, name, address));
-    Log.d(TAG, "notified neighbors");
+    Log.d(TAG, "notified neighbor " + name + " with address" + address);
   }
 
 
@@ -266,61 +319,22 @@ public class BLEHandler extends ConnectionHandler {
 
 
   @Override
-  public void start() throws Exception {
+  public void start() {
     central.start();
     peripheral.start();
+    onConnected();
   }
 
   @Override
   public void stop() {
     central.stop();
     peripheral.stop();
+    onDisconnected();
   }
+
 
   public boolean isOn() {
     return central.getIsOn() && peripheral.getIsOn();
   }
 
-  @Override
-  public ArrayList<Device> getNearbyDevices() {
-    return getNeighbourDevices();
-  }
-
-  @Override
-  public void send(byte[] data) throws SendError {
-    for (Device neighbor : getNeighbourDevices()) {
-      send(data, neighbor);
-    }
-  }
-
-  @SuppressLint("MissingPermission")
-  @Override
-  public void send(byte[] data, Device neighbor) throws SendError {
-
-    if (!connectedDevices.containsKey(neighbor.uuid)) {
-      Log.w(TAG, "wanted to send to " + neighbor.uuid + " but neighbor not connected");
-      return;
-    }
-
-    BluetoothGatt gatt = central.getPeripheral(neighbor.uuid);
-    BluetoothDevice centralDevice = peripheral.getCentral(neighbor.uuid);
-    if (gatt == null && centralDevice == null) {
-      Log.w(TAG, "device exists, but not found in connectedCentrals nor connectedPeripherals!" + neighbor.name + neighbor.uuid);
-      return;
-    }
-
-    if (gatt != null) {
-      BluetoothGattCharacteristic characteristic = central.getMessageCharacteristic(gatt);
-      addToQueue(new WriteCharacteristic(gatt, characteristic, data, 3, neighbor.uuid));
-    } else {
-      addToQueue(new IndicateCharacteristic(3, peripheral.getMessageCharacteristic(), data, centralDevice));
-    }
-
-    if (pendingTask instanceof Scan) {
-      Log.d(TAG + CTRL, "ending scan to write quickly");
-      central.stopScan();
-      addToQueue(new Scan(((Scan) pendingTask).devicesBeforeConnect));
-      taskEnded();
-    }
-  }
 }
