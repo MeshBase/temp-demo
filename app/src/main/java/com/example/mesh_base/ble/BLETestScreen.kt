@@ -104,7 +104,7 @@ fun BleTestScreen(meshManager: MeshManager) {
 
             }
 
-            meshManager.setListener(listener)
+            meshManager.subscribe(listener);
             meshManager.on()
         }
 
