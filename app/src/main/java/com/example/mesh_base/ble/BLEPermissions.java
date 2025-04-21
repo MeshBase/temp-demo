@@ -250,7 +250,7 @@ public class BLEPermissions {
   }
 
   public boolean isEnabled() {
-    return hasPermissions() && bluetoothIsOn() & locationIsOn();
+    return hasPermissions() && bluetoothIsOn() && locationIsOn();
   }
 
   @SuppressLint("MissingPermission")
