@@ -22,9 +22,7 @@ public class ConnectionHandlerFactory {
             case BLE:
                 handler = new BLEConnectionHandler(context, id);
                 break;
-            case WifiDirect:
-                handler = new BLEConnectionHandler(context, id);
-                break;
+            //Todo: add wifi direct
             default:
                 throw new NotImplementedError();
         }
