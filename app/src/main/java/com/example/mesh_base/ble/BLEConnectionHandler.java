@@ -99,6 +99,17 @@ public class BLEConnectionHandler extends ConnectionHandler {
     this.permission.enable();
   }
 
+  @Override
+  public boolean isEnabled() {
+    return permission.isEnabled();
+  }
+
+
+  @Override
+  public boolean isSupported() {
+    return permission.isSupported();
+  }
+
   BLETask getPending() {
     return pendingTask;
   }
