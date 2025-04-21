@@ -81,9 +81,9 @@ fun BleTestScreen(meshManager: MeshManager) {
                 override fun onStatusChange(status: Status) {
                     isOn = status.isOn
                     bleIsOn =
-                        status.connectionStatuses.get(ConnectionHandlersEnum.BLE)?.isOn == true
+                        status.connectionStatuses[ConnectionHandlersEnum.BLE]?.isOn == true
                     wifiDirectIsOn =
-                        status.connectionStatuses.get(ConnectionHandlersEnum.WifiDirect)?.isOn == true
+                        status.connectionStatuses[ConnectionHandlersEnum.WifiDirect]?.isOn == true
                 }
 
                 override fun onNeighborConnected(device: Device) {

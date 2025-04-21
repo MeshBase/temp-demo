@@ -89,6 +89,7 @@ public class MeshManager {
       connectionHandler.enable();
     }
     isOn = true;
+    listener.onStatusChange(getStatus());
   }
 
   public void off() {
@@ -96,6 +97,7 @@ public class MeshManager {
       helper.stop();
     }
     isOn = false;
+    listener.onStatusChange(getStatus());
   }
 
   public ArrayList<Device> getNeighbors() {
@@ -109,11 +111,10 @@ public class MeshManager {
   public Status getStatus() {
     HashMap<ConnectionHandlersEnum, Status.Property> _status = new HashMap<>() {
       {
-        for (Entry<ConnectionHandlersEnum, ConnectionHandler> helper : connectionHandlers.entrySet()) {
-          ConnectionHandlersEnum key = helper.getKey();
-          ConnectionHandler value = helper.getValue();
-          // TODO: check status and is on and is allowed in the connection handlers
-          put(key, new Status.Property(true, true, true));
+        for (Entry<ConnectionHandlersEnum, ConnectionHandler> entry : connectionHandlers.entrySet()) {
+          ConnectionHandlersEnum key = entry.getKey();
+          ConnectionHandler connectionHandler = entry.getValue();
+          put(key, new Status.Property(connectionHandler.isEnabled(), connectionHandler.isOn(), connectionHandler.isSupported()));
         }
       }
     };
