@@ -14,15 +14,12 @@ import android.provider.Settings;
 import android.util.Log;
 
 import androidx.activity.ComponentActivity;
-import androidx.activity.result.ActivityResultCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Map;
-import java.util.stream.Stream;
 
 public class WifiDirectPermissions {
     private final ComponentActivity activity;
@@ -33,31 +30,35 @@ public class WifiDirectPermissions {
             Log.d(TAG, "WifiDirect enabled (listener not set yet)");
         }
 
+        @Override
         public void onDisabled() {
             Log.d(TAG, "WifiDirect disabled (listener not set yet)");
         }
     };
+    private WifiDirectPermissionListener listener = defaultListener;
     private final ActivityResultLauncher<String[]> permissionsLauncher;
-    public WifiDirectPermissions(ComponentActivity activity) {
+
+    public WifiDirectPermissions(ComponentActivity activity, WifiDirectPermissionListener listener) {
         this.activity = activity;
+        this.listener = listener;
         permissionsLauncher = activity.registerForActivityResult(
                 new ActivityResultContracts.RequestMultiplePermissions(),
                 result -> {
                     if (!wifiP2pIsOn()) {
-                        promptWifi();
                         Log.d(TAG, "Wifi permission Prompted");
+                        promptWifi();
                     } else if (!locationIsOn()) {
-                        promptLocation();
                         Log.d(TAG, "Location permission Prompted");
+                        promptLocation();
                     } else {
-                        listener.onEnabled();
                         Log.d(TAG, "Every permission given!");
+                        listener.onEnabled();
                     }
                 }
         );
     }
 
-    public void setListener(StatusListener listener) {
+    public void setListener(WifiDirectPermissionListener listener) {
         this.listener = listener;
     }
 
@@ -89,8 +90,8 @@ public class WifiDirectPermissions {
         ArrayList<String> permissions = new ArrayList<>(Arrays.asList(
                 permission.ACCESS_WIFI_STATE,
                 permission.CHANGE_WIFI_STATE,
-//                permission.ACCESS_FINE_LOCATION,
-//                permission.ACCESS_COARSE_LOCATION,
+                permission.ACCESS_FINE_LOCATION,
+                permission.ACCESS_COARSE_LOCATION,
                 permission.INTERNET
         ));
 
@@ -102,16 +103,20 @@ public class WifiDirectPermissions {
         return permissions.toArray(new String[0]);
     }
 
-    private boolean wifiP2pIsOn() {
-        WifiManager wifiManager = (WifiManager) activity.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        return wifiManager != null && wifiManager.isWifiEnabled();
-    }
-
     private void promptWifi() {
         Log.d(TAG, "Prompting to enable WiFi");
         activity.startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
     }
 
+    private boolean wifiP2pIsOn() {
+        WifiManager wifiManager = (WifiManager) activity.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        return wifiManager != null && wifiManager.isWifiEnabled();
+    }
+
+    private void promptLocation() {
+        Log.d(TAG, "Prompting to enable Location");
+        activity.startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+    }
 
     private boolean locationIsOn() {
         boolean result;
@@ -127,10 +132,4 @@ public class WifiDirectPermissions {
             );
         }
     }
-
-    private void promptLocation() {
-        Log.d(TAG, "Prompting to enable Location");
-        activity.startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
-    }
-}
 }

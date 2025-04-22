@@ -101,7 +101,7 @@ public class MeshManager {
     }
 
     public ArrayList<Device> getNeighbors() {
-        ArrayList<Device> neighbors = new ArrayList<Device>();
+        ArrayList<Device> neighbors = new ArrayList<>();
         for (ConnectionHandler helper : connectionHandlers.values()) {
             neighbors.addAll(helper.getNeighbourDevices());
         }
