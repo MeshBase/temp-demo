@@ -94,7 +94,7 @@ public class Router {
                 Log.e(TAG, "Unknown byte array. Can't decode data");
                 return;
         }
-        if (protocol.destination.equals(id)) {
+        if (protocol.destination != null && protocol.destination.equals(id)) {
             //TODO: prevent user from receiving the message twice, but keep now for testing purposes
             //TODO: if the data was a response to a sent message, use handleOnResponse() instead of onReceivedData() - when Header-only decoding is implemented
             if (messageProtocolType == ProtocolType.ACK) {
