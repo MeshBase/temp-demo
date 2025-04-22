@@ -3,6 +3,7 @@ package com.example.mesh_base.router;
 
 import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
+
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -28,13 +29,13 @@ public class ProtocolTest {
     private MeshProtocol<SendMessageBody> getDummySendMessageBody() {
         SendMessageBody messageBody = new SendMessageBody(4,
                 false,
-                UUID.fromString("a9c5c710-0753-4343-ab51-314ec423b732"),
                 "hello world"
-                );
+        );
         return new ConcreteMeshProtocol<>(
                 1,
                 4,
                 113,
+                UUID.fromString("a9c5c710-0753-4343-ab51-314ec423b732"),
                 UUID.fromString("dd91a1c8-5f6a-4430-815f-f3e1c8780fc8"),
                 messageBody
         );

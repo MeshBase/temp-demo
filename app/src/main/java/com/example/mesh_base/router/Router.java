@@ -51,9 +51,11 @@ public class Router {
         }
     }
 
-    public void sendData(MeshProtocol<?> protocol, SendListener listener) {
+    public void sendData(MeshProtocol<?> protocol, SendListener listener, boolean keepMessageId) {
         //override since router should be concerned about the remaining hops and keeping track of message Ids
-        protocol.messageId = new Random().nextInt();
+        if (!keepMessageId) {
+            protocol.messageId = new Random().nextInt();
+        }
         protocol.remainingHops = 4;
         setRouted(protocol.messageId, protocol.sender);
         listeners.put(protocol.messageId, listener);
@@ -62,6 +64,10 @@ public class Router {
         } catch (SendError e) {
             handleOnError(e, protocol.messageId);
         }
+    }
+
+    public void sendData(MeshProtocol<?> protocol, SendListener listener) {
+        sendData(protocol, listener, false);
     }
 
     //keep private until it's need is justified
@@ -77,6 +83,9 @@ public class Router {
                 //Silent error in case other neighbors have successfully sent
                 Log.e(TAG, "Error sending data: " + e.getMessage());
             }
+        }
+        if (!hasAttemptedSending) {
+            throw new SendError("No neighbors available");
         }
     }
 
