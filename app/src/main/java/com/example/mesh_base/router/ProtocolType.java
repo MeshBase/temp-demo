@@ -7,8 +7,4 @@ public enum ProtocolType {
     UNKNOWN_MESSAGE_TYPE,
     // add more type here
 
-    //TODO: remove, just an example
-    GET_USERNAME,
-    RECEIVE_USERNAME
-
 }

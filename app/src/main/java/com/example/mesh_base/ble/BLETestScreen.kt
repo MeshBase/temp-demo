@@ -35,10 +35,10 @@ import com.example.mesh_base.mesh_manager.MeshManagerListener
 import com.example.mesh_base.mesh_manager.Status
 import com.example.mesh_base.router.ConcreteMeshProtocol
 import com.example.mesh_base.router.MeshProtocol
+import com.example.mesh_base.router.ProtocolType
 import com.example.mesh_base.router.SendListener
 import com.example.mesh_base.router.SendMessageBody
 import com.example.mesh_base.ui.theme.MeshBaseTheme
-import java.util.function.Function
 
 
 @Composable
@@ -62,17 +62,66 @@ fun BleTestScreen(meshManager: MeshManager) {
             val listener = object : MeshManagerListener() {
                 override fun onDataReceivedForSelf(protocol: MeshProtocol<*>) {
                     Log.d(TAG, "received data")
+                    if (MeshProtocol.getByteType(protocol.encode()) == ProtocolType.SEND_MESSAGE) {
+                        @Suppress("UNCHECKED_CAST")
+                        val sendProtocol = protocol as MeshProtocol<SendMessageBody>
 
-                    Handler(Looper.getMainLooper()).post({
-                        Toast.makeText(
-                            context,
-                            "Received: ${
-//                                protocol.body.msg
-"---"
-                            } \nfrom device with uuid=${protocol.sender}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    })
+                        val response: MeshProtocol<SendMessageBody> = ConcreteMeshProtocol(
+                            1, -1, protocol.messageId, meshManager.id, protocol.sender,
+                            SendMessageBody(4, false, "a reply to ${sendProtocol.body.msg}")
+                        )
+
+                        Handler(Looper.getMainLooper()).post {
+                            Toast.makeText(
+                                context,
+                                "Responding with mid=" + protocol.messageId + " by saying " + response.body.msg,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        val listener = object : SendListener {
+                            override fun onError(error: SendError) {
+                                Handler(Looper.getMainLooper()).post {
+                                    Toast.makeText(
+                                        context,
+                                        "error when Responding to =${protocol.sender} " + error.message,
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+
+                            override fun onAck() {
+                                Handler(Looper.getMainLooper()).post {
+                                    Toast.makeText(
+                                        context,
+                                        "response saying " + response.body.msg + " was acked",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+
+                            override fun onResponse(res: MeshProtocol<*>?) {
+                                Handler(Looper.getMainLooper()).post {
+                                    Toast.makeText(
+                                        context,
+                                        "(should never happen) response to response for ${protocol.sender} was received",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+
+                        }
+                        meshManager.send(response, listener, true)
+
+                    } else {
+                        Handler(Looper.getMainLooper()).post {
+                            Toast.makeText(
+                                context,
+                                "Received: data \nfrom device with uuid=${protocol.sender}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
                 }
 
                 override fun onStatusChange(status: Status) {
@@ -101,7 +150,7 @@ fun BleTestScreen(meshManager: MeshManager) {
 
             }
 
-            meshManager.subscribe(listener);
+            meshManager.subscribe(listener)
             meshManager.on()
         }
 
@@ -174,12 +223,16 @@ fun BleTestScreen(meshManager: MeshManager) {
                                         })
                                     }
 
+                                    //TODO: consider adding a type argument to onResponse on SendListener
                                     override fun onResponse(protocol: MeshProtocol<*>) {
+
+                                        @Suppress("UNCHECKED_CAST")
+                                        val response = protocol as MeshProtocol<SendMessageBody>
                                         //No response expected for SendMessageBody
                                         Handler(Looper.getMainLooper()).post({
                                             Toast.makeText(
                                                 context,
-                                                "unexpected response received",
+                                                "response received=" + response.body.msg,
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         })

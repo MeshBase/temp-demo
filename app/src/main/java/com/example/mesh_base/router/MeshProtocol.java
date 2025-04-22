@@ -6,14 +6,13 @@ import java.util.function.Function;
 
 public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshSerializer<MeshProtocol<T>> {
     private static final int HEADER_LENGTH = 48;
-    //TODO: revert to protected when the BLETestScreen.kt doesn't need to decode bytes no more
     public UUID sender;
     public UUID destination;
-    //TODO: revert to protected when the BLETestScreen.kt doesn't need to decode bytes no more
     public T body;
     //So that users can send responses using the messageId of requests
     public int messageId;
-    protected int messageType;
+    //So that users can send responses depending on the message type when listening to incoming data
+    public int messageType;
     protected int remainingHops;
 
     public MeshProtocol(int messageType, int remainingHops, int messageId, UUID sender, UUID destination, T body) {

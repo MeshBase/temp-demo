@@ -95,7 +95,8 @@ public class MeshManager {
         Log.d(TAG, "MeshManager: Setting up Router...");
 
         HashSet<ProtocolType> typesExpectingResponses = new HashSet<>();
-        typesExpectingResponses.add(ProtocolType.GET_USERNAME);
+        //TODO: implement ProtocolType.Receive_Message as a response type, but for now, use SENd_MESSAGE itself
+        typesExpectingResponses.add(ProtocolType.SEND_MESSAGE);
         router = new Router(connectionHandlers, id, typesExpectingResponses);
 
         router.setListener(new Router.RouterListener() {
@@ -180,6 +181,11 @@ public class MeshManager {
             }
         };
         return new Status(isOn, _status);
+    }
+
+    public void send(MeshProtocol<?> protocol, SendListener listener, boolean keepMessageId) {
+        Log.d(TAG, "MeshManager: Sending data with protocol (keeping message id)" + protocol.getClass().getSimpleName());
+        router.sendData(protocol, listener, keepMessageId);
     }
 
     public void send(MeshProtocol<?> protocol, SendListener listener) {
