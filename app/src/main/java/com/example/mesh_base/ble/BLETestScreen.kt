@@ -60,17 +60,15 @@ fun BleTestScreen(meshManager: MeshManager) {
         LaunchedEffect(Unit) {
 
             val listener = object : MeshManagerListener() {
-                override fun onDataReceivedForSelf(data: ByteArray) {
+                override fun onDataReceivedForSelf(protocol: MeshProtocol<*>) {
                     Log.d(TAG, "received data")
-                    val bodyDecoder =
-                        Function { d: ByteArray? -> SendMessageBody.decode(d) }
-                    val protocol = MeshProtocol.decode(data, bodyDecoder)
 
                     Handler(Looper.getMainLooper()).post({
                         Toast.makeText(
                             context,
                             "Received: ${
-                                protocol.body.msg
+//                                protocol.body.msg
+"---"
                             } \nfrom device with uuid=${protocol.sender}",
                             Toast.LENGTH_SHORT
                         ).show()

@@ -19,6 +19,7 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.UUID;
 
 public class RouterUnitTest {
@@ -34,8 +35,8 @@ public class RouterUnitTest {
         UUID id = UUID.randomUUID();
         HashMap<ConnectionHandlersEnum, ConnectionHandler> handlers = new HashMap<>();
         handlers.put(ConnectionHandlersEnum.BLE, handler);
-        Router router = new Router(handlers, id);
-        MeshProtocol<SendMessageBody> protocol = new ConcreteMeshProtocol<>(1, -1, -1, id, new SendMessageBody(4, false, devices.get(0).uuid, "hello world"));
+        Router router = new Router(handlers, id, new HashSet<>());
+        MeshProtocol<SendMessageBody> protocol = new ConcreteMeshProtocol<>(1, -1, -1, id, devices.get(0).uuid, new SendMessageBody(4, false, "hello world"));
 
         //Perfect path
         router.sendData(protocol, mock(SendListener.class));

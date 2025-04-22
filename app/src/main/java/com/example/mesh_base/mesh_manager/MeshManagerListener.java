@@ -3,6 +3,7 @@ package com.example.mesh_base.mesh_manager;
 import android.util.Log;
 
 import com.example.mesh_base.global_interfaces.Device;
+import com.example.mesh_base.router.MeshProtocol;
 
 public abstract class MeshManagerListener {
     String TAG = "my_meshManager_listener";
@@ -10,7 +11,7 @@ public abstract class MeshManagerListener {
     static MeshManagerListener createEmpty() {
         return new MeshManagerListener() {
             @Override
-            public void onDataReceivedForSelf(byte[] data) {
+            public void onDataReceivedForSelf(MeshProtocol<?> data) {
                 Log.d(TAG, "[from empty listener] received data");
             }
 
@@ -38,7 +39,7 @@ public abstract class MeshManagerListener {
 
     // Is going to be called only when the received data destination matches the current
     // user UUID, In other words if we are the destination.
-    abstract public void onDataReceivedForSelf(byte[] data);
+    abstract public void onDataReceivedForSelf(MeshProtocol<?> protocol);
 
     abstract public void onStatusChange(Status status);
 
