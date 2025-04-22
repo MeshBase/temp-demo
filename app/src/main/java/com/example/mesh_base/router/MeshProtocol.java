@@ -7,19 +7,21 @@ import java.util.function.Function;
 public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshSerializer<MeshProtocol<T>> {
   //TODO: revert to protected when the BLETestScreen.kt doesn't need to decode bytes no more
   public UUID sender;
+  public UUID destination;
   //TODO: revert to protected when the BLETestScreen.kt doesn't need to decode bytes no more
   public T body;
   protected int messageType;
   protected int remainingHops;
   protected int messageId;
 
-  private static final int HEADER_LENGTH = 32;
+  private static final int HEADER_LENGTH = 48;
 
-  public MeshProtocol(int messageType, int remainingHops, int messageId, UUID sender, T body) {
+  public MeshProtocol(int messageType, int remainingHops, int messageId, UUID sender, UUID destination, T body) {
     this.messageType = messageType;
     this.remainingHops = remainingHops;
     this.messageId = messageId;
     this.sender = sender;
+    this.destination = destination;
     this.body = body;
   }
 
@@ -34,13 +36,23 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
     int remainingHops = buffer.getInt();
     int messageId = buffer.getInt();
     UUID sender = new UUID(buffer.getLong(), buffer.getLong());
+
+    long mostSignificantBits = buffer.getLong();
+    long leastSignificantBits = buffer.getLong();
+
+    UUID destination = null;
+
+    if (mostSignificantBits != 0L || leastSignificantBits != 0L) {
+      destination = new UUID(mostSignificantBits, leastSignificantBits);
+    }
+
     int bodyLength = buffer.getInt();
 
     byte[] bodyBytes = new byte[bodyLength];
     buffer.get(bodyBytes);
     T body = bodyDecoder.apply(bodyBytes);
 
-    return new ConcreteMeshProtocol<>(messageType, remainingHops, messageId, sender, body);
+    return new ConcreteMeshProtocol<>(messageType, remainingHops, messageId, sender, destination, body);
   }
 
   public static ProtocolType getByteType(byte[] data) {
@@ -51,6 +63,8 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
     int messageType = buffer.getInt();
 
     switch(messageType) {
+      case 0:
+        return ProtocolType.ACK;
       case 1:
         return ProtocolType.SEND_MESSAGE;
       case 2:
@@ -71,6 +85,13 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
     buffer.putInt(messageId);
     buffer.putLong(sender.getMostSignificantBits());
     buffer.putLong(sender.getLeastSignificantBits());
+    if (destination == null) {
+      buffer.putLong(0L);
+      buffer.putLong(0L);
+    } else {
+      buffer.putLong(destination.getMostSignificantBits());
+      buffer.putLong(destination.getLeastSignificantBits());
+    }
     buffer.putInt(bodyLength);
     buffer.put(bodyBytes);
     return buffer.array();

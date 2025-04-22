@@ -38,7 +38,6 @@ import com.example.mesh_base.router.MeshProtocol
 import com.example.mesh_base.router.SendListener
 import com.example.mesh_base.router.SendMessageBody
 import com.example.mesh_base.ui.theme.MeshBaseTheme
-import java.util.UUID
 import java.util.function.Function
 
 
@@ -146,11 +145,11 @@ fun BleTestScreen(meshManager: MeshManager) {
                                         1,
                                         4,
                                         113,
-                                        UUID.fromString("dd91a1c8-5f6a-4430-815f-f3e1c8780fc8"),
+                                        meshManager.id,
+                                        device.uuid,
                                         SendMessageBody(
                                             4,
                                             false,
-                                            device.uuid,
                                             message,
                                         )
                                     )
