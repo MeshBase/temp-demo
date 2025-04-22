@@ -67,15 +67,6 @@ public class Router {
                 Log.e(TAG, "Error sending data: " + e.getMessage());
             }
         }
-
-        if (!hasAttemptedSending) {
-            //TODO: Create a dedicated error type if necessary
-            throw new SendError("Could not send to any neighbor");
-        }
-    }
-
-    public void setOnReceivedData(DataListener onReceivedData) {
-        this.onReceivedData = onReceivedData;
     }
 
     private boolean hasRoutedDataBefore(int messageId, UUID address) {
@@ -89,13 +80,42 @@ public class Router {
     }
 
     private void handleOnData(Device neighbor, byte[] byteArray) {
-        //TODO: clarify the way to know the body type before decoding the body. Assuming send message for now
-        MeshProtocol<SendMessageBody> protocol = MeshProtocol.decode(byteArray, SendMessageBody::decode);
-        if (protocol.body.getDestination().equals(id)) {
+        MeshProtocol<?> protocol;
+        ProtocolType messageProtocolType = MeshProtocol.getByteType(byteArray);
+
+        switch (messageProtocolType) {
+            case ACK:
+                protocol = MeshProtocol.decode(byteArray, AckMessageBody::decode);
+                break;
+            case SEND_MESSAGE:
+                protocol = MeshProtocol.decode(byteArray, SendMessageBody::decode);
+                break;
+            default:
+                Log.e(TAG, "Unknown byte array. Can't decode data");
+                return;
+        }
+        if (protocol.destination != null && protocol.destination.equals(id)) {
             //TODO: prevent user from receiving the message twice, but keep now for testing purposes
             //TODO: if the data was a response to a sent message, use handleOnResponse() instead of onReceivedData() - when Header-only decoding is implemented
-            //TODO: if the data was an ack, use handleOnAck() instead of onReceivedData() - when Header-only decoding is implemented
-            onReceivedData.onEvent(byteArray, neighbor);
+            if (messageProtocolType == ProtocolType.ACK) {
+                handleOnAck(protocol.messageId);
+            } else {
+                onReceivedData.onEvent(byteArray, neighbor);
+                AckMessageBody ackMessageBody = new AckMessageBody("OK");
+                MeshProtocol<AckMessageBody> ackData = new ConcreteMeshProtocol<>(
+                        0, // Message Type is ACK
+                        4, // Goes to 4 device before stopping
+                        protocol.messageId, // same as the message id the protocol came with
+                        id, // Destination becomes sender
+                        protocol.sender, // Sender becomes Destination
+                        ackMessageBody // Sends back 'OK'
+                );
+                try {
+                    floodData(ackData.encode());
+                } catch (SendError e) {
+                    Log.e(TAG, "Error sending ack: " + protocol.messageId);
+                }
+            }
         } else if (hasRoutedDataBefore(protocol.messageId, protocol.sender)) {
             Log.d(TAG, "already routed data. skipping. messageId=" + protocol.messageId + " sender=" + protocol.sender);
         } else if (protocol.remainingHops <= 0) {
@@ -113,6 +133,17 @@ public class Router {
         }
     }
 
+    public void setOnReceivedData(DataListener onReceivedData) {
+        this.onReceivedData = onReceivedData;
+    }
+
+    private void handleOnAck(int messageId) {
+        //TODO: think on how to remove listener if no other response is expected
+        SendListener listener = getListenerOrError(messageId);
+        listener.onAck();
+        listeners.remove(messageId);
+    }
+
     private void handleOnError(SendError error, int messageId) {
         SendListener listener = getListenerOrError(messageId);
         listener.onError(error);
@@ -124,12 +155,6 @@ public class Router {
         SendListener listener = getListenerOrError(messageId);
         listener.onResponse(response);
         listeners.remove(messageId);
-    }
-
-    private void handleOnAck(int messageId) {
-        //TODO: think on how to remove listener if no other response is expected
-        SendListener listener = getListenerOrError(messageId);
-        listener.onAck();
     }
 
     private SendListener getListenerOrError(int messageId) {
