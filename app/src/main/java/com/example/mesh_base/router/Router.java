@@ -214,7 +214,7 @@ public class Router {
     private SendListener getListener(int messageId) throws Exception {
         SendListener listener = listeners.get(messageId);
         if (listener == null) {
-            throw new InternalRouterError("could not find listener for messageId" + messageId);
+            throw new InternalRouterError("Could not find listener for messageId: " + messageId);
         }
         return listener;
     }
