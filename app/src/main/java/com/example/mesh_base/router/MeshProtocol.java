@@ -5,15 +5,16 @@ import java.util.UUID;
 import java.util.function.Function;
 
 public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshSerializer<MeshProtocol<T>> {
-    private static final int HEADER_LENGTH = 48;
+    //TODO: revert to protected when the BLETestScreen.kt doesn't need to decode bytes no more
     public UUID sender;
     public UUID destination;
+    //TODO: revert to protected when the BLETestScreen.kt doesn't need to decode bytes no more
     public T body;
-    //So that users can send responses using the messageId of requests
-    public int messageId;
-    //So that users can send responses depending on the message type when listening to incoming data
-    public int messageType;
+    protected int messageType;
     protected int remainingHops;
+    protected int messageId;
+
+    private static final int HEADER_LENGTH = 48;
 
     public MeshProtocol(int messageType, int remainingHops, int messageId, UUID sender, UUID destination, T body) {
         this.messageType = messageType;
@@ -60,12 +61,8 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
         }
         ByteBuffer buffer = ByteBuffer.wrap(data);
         int messageType = buffer.getInt();
-        return toByteType(messageType);
 
-    }
-
-    private static ProtocolType toByteType(int messageType) {
-        switch (messageType) {
+        switch(messageType) {
             case 0:
                 return ProtocolType.ACK;
             case 1:
@@ -77,11 +74,6 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
                 return ProtocolType.UNKNOWN_MESSAGE_TYPE;
         }
     }
-
-    public ProtocolType getByteType() {
-        return toByteType(this.messageType);
-    }
-
     @Override
     public byte[] encode() {
         byte[] bodyBytes = body != null ? body.encode() : new byte[0];
@@ -105,9 +97,8 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
         return buffer.array();
 
     }
-
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(Object o){
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         MeshProtocol<?> that = (MeshProtocol<?>) o;
@@ -120,7 +111,7 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
     }
 
     @Override
-    public int hashCode() {
+    public int hashCode(){
         int result = messageType;
         result = 31 * result + remainingHops;
         result = 31 * result + messageId;
@@ -128,5 +119,13 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
         result = 31 * result + body.hashCode();
 
         return result;
+    }
+
+    public ProtocolType getByteType() {
+        byte[] data = this.encode();
+        return getByteType(data);
+    }
+    public int getMessageId(){
+        return  this.messageId;
     }
 }

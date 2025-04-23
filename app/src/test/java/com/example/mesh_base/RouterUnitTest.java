@@ -143,15 +143,15 @@ public class RouterUnitTest {
 
         //response is sent
         MeshProtocol<SendMessageBody> response = new ConcreteMeshProtocol<>(
-                1, -1, request.messageId, id, senderId, new SendMessageBody(4, false, "response")
+                1, -1, request.getMessageId(), id, senderId, new SendMessageBody(4, false, "response")
         );
         SendListener responseListener = mock(SendListener.class);
         router.sendData(response, responseListener, true);
-        assertEquals(response.messageId, request.messageId);
+        assertEquals(response.getMessageId(), request.getMessageId());
 
         //ack is received
-        MeshProtocol<AckMessageBody> ack = new ConcreteMeshProtocol<>(0, -1, response.messageId, senderId, id, new AckMessageBody("ok"));
-        assertEquals(response.messageId, ack.messageId);
+        MeshProtocol<AckMessageBody> ack = new ConcreteMeshProtocol<>(0, -1, response.getMessageId(), senderId, id, new AckMessageBody("ok"));
+        assertEquals(response.getMessageId(), ack.getMessageId());
         listener.onDataReceived(sender, ack.encode());
 
         // on ack should be called
