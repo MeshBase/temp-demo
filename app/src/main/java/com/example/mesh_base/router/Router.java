@@ -177,7 +177,7 @@ public class Router {
             SendListener listener = getListener(messageId);
             listener.onAck();
         } catch (Exception e) {
-            Log.e(TAG, "error when handling on ack" + e.getMessage());
+            Log.e(TAG, "error when handling on ack: " + e.getMessage());
             routerListener.onError(e);
         } finally {
             listeners.remove(messageId);
