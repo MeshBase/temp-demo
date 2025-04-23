@@ -113,8 +113,8 @@ public class Router {
         try {
             floodData(ackData.encode());
         } catch (SendError e) {
-            //TODO: send to on error
             Log.e(TAG, "Error sending ack: " + protocol.messageId);
+            routerListener.onError(e);
         }
     }
 
