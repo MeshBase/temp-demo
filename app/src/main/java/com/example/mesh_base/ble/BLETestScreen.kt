@@ -62,7 +62,7 @@ fun BleTestScreen(meshManager: MeshManager) {
             val listener = object : MeshManagerListener() {
                 override fun onDataReceivedForSelf(protocol: MeshProtocol<*>) {
                     Log.d(TAG, "received data")
-                    if (MeshProtocol.getByteType(protocol.encode()) == ProtocolType.SEND_MESSAGE) {
+                    if (protocol.byteType === ProtocolType.SEND_MESSAGE) {
                         @Suppress("UNCHECKED_CAST")
                         val sendProtocol = protocol as MeshProtocol<SendMessageBody>
 

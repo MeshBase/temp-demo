@@ -60,7 +60,11 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
         }
         ByteBuffer buffer = ByteBuffer.wrap(data);
         int messageType = buffer.getInt();
+        return toByteType(messageType);
 
+    }
+
+    private static ProtocolType toByteType(int messageType) {
         switch (messageType) {
             case 0:
                 return ProtocolType.ACK;
@@ -72,6 +76,10 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
             default:
                 return ProtocolType.UNKNOWN_MESSAGE_TYPE;
         }
+    }
+
+    public ProtocolType getByteType() {
+        return toByteType(this.messageType);
     }
 
     @Override

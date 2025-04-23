@@ -11,8 +11,8 @@ import com.example.mesh_base.global_interfaces.SendError;
 
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 
 public class Router {
