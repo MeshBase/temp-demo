@@ -6,6 +6,7 @@ import com.example.mesh_base.global_interfaces.ConnectionHandler;
 import com.example.mesh_base.global_interfaces.ConnectionHandlerListener;
 import com.example.mesh_base.global_interfaces.ConnectionHandlersEnum;
 import com.example.mesh_base.global_interfaces.Device;
+import com.example.mesh_base.global_interfaces.InternalRouterError;
 import com.example.mesh_base.global_interfaces.SendError;
 
 import java.util.HashMap;
@@ -173,7 +174,7 @@ public class Router {
     private void handleOnAck(MeshProtocol<?> protocol) {
         int messageId = protocol.messageId;
         try {
-            SendListener listener = getListenerOrError(messageId);
+            SendListener listener = getListener(messageId);
             listener.onAck();
         } catch (Exception e) {
             Log.e(TAG, "error when handling on ack" + e.getMessage());
@@ -185,7 +186,7 @@ public class Router {
 
     private void handleOnError(SendError error, int messageId) {
         try {
-            SendListener listener = getListenerOrError(messageId);
+            SendListener listener = getListener(messageId);
             listener.onError(error);
         } catch (Exception e) {
             Log.e(TAG, "error when handle on error" + messageId);
@@ -199,7 +200,7 @@ public class Router {
     private void handleOnResponse(MeshProtocol<?> response) {
         int messageId = response.messageId;
         try {
-            SendListener listener = getListenerOrError(messageId);
+            SendListener listener = getListener(messageId);
             listener.onResponse(response);
             replyWithAck(response);
         } catch (Exception e) {
@@ -210,11 +211,10 @@ public class Router {
         }
     }
 
-    private SendListener getListenerOrError(int messageId) throws Exception {
+    private SendListener getListener(int messageId) throws Exception {
         SendListener listener = listeners.get(messageId);
         if (listener == null) {
-            //TODO: implement an exception that has a user friendly error and a technical error
-            throw new Exception("Could not find listener for messageId" + messageId);
+            throw new InternalRouterError("could not find listener for messageId" + messageId);
         }
         return listener;
     }
