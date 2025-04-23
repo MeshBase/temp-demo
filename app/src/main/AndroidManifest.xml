@@ -11,6 +11,46 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
+
+    <!-- make sure to declare that the app needs wifi direct -->
+    <uses-feature android:name="android.hardware.wifi.direct" />
+
+    <!-- permissions for using wifi p2p as per the docs here:
+        https://developer.android.com/reference/android/net/wifi/p2p/package-summary
+        ACCESS_WIFI_STATE
+        CHANGE_WIFI_STATE
+        INTERNET (although this is not required for wifi p2p, it is required for the app to work)
+    -->
+
+    <!-- Only if app targets Android 13 (API level 33)
+         or higher, you must declare the NEARBY_WIFI_DEVICES permission. -->
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:ignore="UnusedAttribute" />
+    <!-- If your app derives location information from Wi-Fi APIs,
+             don't include the "usesPermissionFlags" attribute. -->
+
+    <!--    <uses-permission-->
+    <!--        android:name="android.permission.ACCESS_FINE_LOCATION"-->
+    <!--        android:maxSdkVersion="32"-->
+    <!--        android:required="true" />-->
+    <!--    <uses-permission-->
+    <!--        android:name="android.permission.ACCESS_COARSE_LOCATION"-->
+    <!--        android:maxSdkVersion="32"-->
+    <!--        android:required="true" />-->
+    <!-- since I need the fine location, it's a must to have the coarse location too -->
+
+    <uses-permission
+        android:name="android.permission.ACCESS_WIFI_STATE"
+        android:required="true" />
+    <uses-permission
+        android:name="android.permission.CHANGE_WIFI_STATE"
+        android:required="true" />
+    <uses-permission
+        android:name="android.permission.INTERNET"
+        android:required="true" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
