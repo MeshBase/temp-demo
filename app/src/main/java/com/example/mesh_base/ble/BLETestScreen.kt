@@ -239,7 +239,7 @@ fun BleTestScreen(meshManager: MeshManager) {
                                     }
                                 }
 
-                                meshManager.send(protocol, listener)
+                                meshManager.send(protocol, listener, false)
                             }) {
                                 Text("Send")
                             }

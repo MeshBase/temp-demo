@@ -184,13 +184,8 @@ public class MeshManager {
     }
 
     public void send(MeshProtocol<?> protocol, SendListener listener, boolean keepMessageId) {
-        Log.d(TAG, "MeshManager: Sending data with protocol (keeping message id)" + protocol.getClass().getSimpleName());
+        Log.d(TAG, "MeshManager: Sending data with protocol" + protocol.getClass().getSimpleName());
         router.sendData(protocol, listener, keepMessageId);
-    }
-
-    public void send(MeshProtocol<?> protocol, SendListener listener) {
-        Log.d(TAG, "MeshManager: Sending data with protocol " + protocol.getClass().getSimpleName());
-        router.sendData(protocol, listener);
     }
 
     private void clearListeners() {
