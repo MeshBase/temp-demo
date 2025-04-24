@@ -10,11 +10,13 @@ import com.example.mesh_base.global_interfaces.ConnectionHandlerListener;
 import com.example.mesh_base.global_interfaces.ConnectionHandlersEnum;
 import com.example.mesh_base.global_interfaces.Device;
 import com.example.mesh_base.router.MeshProtocol;
+import com.example.mesh_base.router.ProtocolType;
 import com.example.mesh_base.router.Router;
 import com.example.mesh_base.router.SendListener;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -83,16 +85,6 @@ public class MeshManager {
                                 listener.onStatusChange(status);
                             }
                         }
-
-                        @Override
-                        public void onDataReceived(Device device, byte[] data) {
-                            Log.d(TAG, "MeshManager: Data received from " + device);
-                            if (device.uuid.equals(id)) {
-                                for (MeshManagerListener listener : listeners) {
-                                    listener.onDataReceivedForSelf(data);
-                                }
-                            }
-                        }
                     }
             );
             Log.d(TAG, "MeshManager: Subscribed to connection handler for " + _enum);
@@ -101,15 +93,29 @@ public class MeshManager {
         Log.d(TAG, "MeshManager: Completed Bootstrapping connection handlers!");
 
         Log.d(TAG, "MeshManager: Setting up Router...");
-        router = new Router(connectionHandlers, id);
-        //TODO: accept protocol instead of byte array once the router's handleOnData is modified, to not cause conflict
-        //TODO: consider exposing the protocol itself to users
-        router.setOnReceivedData((data, neighbor) -> {
-            Log.d(TAG, "MeshManager: Data received from router, neighbor: " + neighbor);
-            for (MeshManagerListener listener : listeners) {
-                listener.onDataReceivedForSelf(data);
+
+        HashSet<ProtocolType> typesExpectingResponses = new HashSet<>();
+        //TODO: implement ProtocolType.Receive_Message as a response type, but for now, use SENd_MESSAGE itself
+        typesExpectingResponses.add(ProtocolType.SEND_MESSAGE);
+        router = new Router(connectionHandlers, id, typesExpectingResponses);
+
+        router.setListener(new Router.RouterListener() {
+            @Override
+            public void onData(MeshProtocol<?> protocol, Device neighbor) {
+                Log.d(TAG, "MeshManager: Data received from router, neighbor: " + neighbor);
+                for (MeshManagerListener listener : listeners) {
+                    listener.onDataReceivedForSelf(protocol);
+                }
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                for (MeshManagerListener listener : listeners) {
+                    listener.onError(exception);
+                }
             }
         });
+
         Log.d(TAG, "MeshManager: Router set up.");
     }
 
@@ -177,9 +183,9 @@ public class MeshManager {
         return new Status(isOn, _status);
     }
 
-    public void send(MeshProtocol<?> protocol, SendListener listener) {
-        Log.d(TAG, "MeshManager: Sending data with protocol " + protocol.getClass().getSimpleName());
-        router.sendData(protocol, listener);
+    public void send(MeshProtocol<?> protocol, SendListener listener, boolean keepMessageId) {
+        Log.d(TAG, "MeshManager: Sending data with protocol" + protocol.getClass().getSimpleName());
+        router.sendData(protocol, listener, keepMessageId);
     }
 
     private void clearListeners() {
