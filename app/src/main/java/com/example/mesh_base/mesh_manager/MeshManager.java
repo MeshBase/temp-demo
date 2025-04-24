@@ -1,5 +1,7 @@
 package com.example.mesh_base.mesh_manager;
 
+import android.util.Log;
+
 import androidx.activity.ComponentActivity;
 
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
@@ -55,6 +57,7 @@ public class MeshManager {
 
                         @Override
                         public void onConnected() {
+                            Log.d(TAG, "MESH MANAGER GOT STATUS CHANGE");
                             listener.onStatusChange(getStatus());
                         }
 
@@ -114,10 +117,17 @@ public class MeshManager {
                 for (Entry<ConnectionHandlersEnum, ConnectionHandler> entry : connectionHandlers.entrySet()) {
                     ConnectionHandlersEnum key = entry.getKey();
                     ConnectionHandler connectionHandler = entry.getValue();
-                    put(key, new Status.Property(connectionHandler.isEnabled(), connectionHandler.isOn(), connectionHandler.isSupported()));
+                    Log.d(TAG, "* HANDLER: " + key);
+                    Log.d(TAG, "- Is Supported: " + connectionHandler.isSupported());
+                    Log.d(TAG, "- Is On: " + connectionHandler.isOn());
+                    Log.d(TAG, "- Is Enabled: " + connectionHandler.isEnabled());
+
+                    put(key, new Status.Property(connectionHandler.isSupported(), connectionHandler.isOn(), connectionHandler.isEnabled()));
                 }
             }
         };
+
+        Log.d(TAG, _status.toString());
 
         return new Status(isOn, _status);
     }

@@ -49,6 +49,7 @@ fun WifiDirectTestScreen(meshManager: MeshManager) {
         val connectedDevices = remember { mutableStateListOf<Device>() }
         var isOn by remember { mutableStateOf(false) }
         var wifiDirectIsOn by remember { mutableStateOf(false) }
+        var wifiDirectIsEnabled by remember { mutableStateOf(false) }
         val id = meshManager.id.toString()
 
 
@@ -60,17 +61,14 @@ fun WifiDirectTestScreen(meshManager: MeshManager) {
             val listener = object : MeshManagerListener() {
                 override fun onDataReceivedForSelf(data: ByteArray) {
                     Log.d(TAG, "received data")
-                    val bodyDecoder =
-                        Function { d: ByteArray? -> SendMessageBody.decode(d) }
+                    val bodyDecoder = Function { d: ByteArray? -> SendMessageBody.decode(d) }
                     val protocol = MeshProtocol.decode(data, bodyDecoder)
 
                     Handler(Looper.getMainLooper()).post({
                         Toast.makeText(
-                            context,
-                            "Received: ${
+                            context, "Received: ${
                                 protocol.body.msg
-                            } \nfrom device with uuid=${protocol.sender}",
-                            Toast.LENGTH_SHORT
+                            } \nfrom device with uuid=${protocol.sender}", Toast.LENGTH_SHORT
                         ).show()
                     })
                 }
@@ -78,6 +76,8 @@ fun WifiDirectTestScreen(meshManager: MeshManager) {
                 override fun onStatusChange(status: Status) {
                     isOn = status.isOn
                     wifiDirectIsOn = status.status[ConnectionHandlersEnum.WifiDirect]?.isOn == true;
+                    wifiDirectIsEnabled =
+                        status.status[ConnectionHandlersEnum.WifiDirect]?.isSupported == true;
                 }
 
                 override fun onNeighborConnected(device: Device) {
@@ -90,8 +90,7 @@ fun WifiDirectTestScreen(meshManager: MeshManager) {
 
                 override fun onError(e: Exception) {
                     Handler(Looper.getMainLooper()).post({
-                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT)
-                            .show()
+                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                     })
                 }
 
@@ -110,6 +109,7 @@ fun WifiDirectTestScreen(meshManager: MeshManager) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("WifiDirectIsOn=$wifiDirectIsOn UUID=$id")
+                Text("WifiDirectIsEnabled=$wifiDirectIsEnabled")
 
                 Button(onClick = {
                     if (isOn) meshManager.off()

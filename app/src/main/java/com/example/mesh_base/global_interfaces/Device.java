@@ -11,4 +11,8 @@ public abstract class Device {
         this.uuid = uuid;
         this.name = name;
     }
+
+//    public boolean equals(Device device) {
+//        return device.uuid == uuid;
+//    }
 }

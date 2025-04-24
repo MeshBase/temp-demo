@@ -2,11 +2,9 @@ package com.example.mesh_base.global_interfaces;
 
 import androidx.activity.ComponentActivity;
 
-import com.example.mesh_base.ble.BLEConnectionHandler;
+import com.example.mesh_base.wifi_direct.WifiDirectConnectionHandler;
 
 import java.util.UUID;
-
-import kotlin.NotImplementedError;
 
 
 public class ConnectionHandlerFactory {
@@ -19,12 +17,15 @@ public class ConnectionHandlerFactory {
     ) {
         ConnectionHandler handler;
         switch (type) {
-            case BLE:
-                handler = new BLEConnectionHandler(context, id);
+//            case BLE:
+//                handler = new BLEConnectionHandler(context, id);
+//                break;
+
+            case WifiDirect:
+                handler = new WifiDirectConnectionHandler(context, id);
                 break;
-            //Todo: add wifi direct
             default:
-                throw new NotImplementedError();
+                throw new RuntimeException("Unhandled Connection Type: " + type);
         }
         return handler;
     }

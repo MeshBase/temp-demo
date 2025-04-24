@@ -1,9 +1,16 @@
 package com.example.mesh_base.wifi_direct;
 
-import static android.Manifest.permission;
+import static android.Manifest.permission.ACCESS_COARSE_LOCATION;
+import static android.Manifest.permission.ACCESS_FINE_LOCATION;
+import static android.Manifest.permission.ACCESS_WIFI_STATE;
+import static android.Manifest.permission.CHANGE_WIFI_STATE;
+import static android.Manifest.permission.INTERNET;
+import static android.Manifest.permission.NEARBY_WIFI_DEVICES;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.location.LocationManager;
 import android.net.wifi.WifiManager;
@@ -26,48 +33,79 @@ public class WifiDirectPermissions {
     private final ActivityResultLauncher<String[]> permissionsLauncher;
     private final ActivityResultLauncher<Intent> wifiSettingsLauncher;
     private final ActivityResultLauncher<Intent> locationSettingsLauncher;
-    private WifiDirectPermissionListener listener;
+    private final Listener listener;
 
-    public WifiDirectPermissions(ComponentActivity activity, WifiDirectPermissionListener listener) {
+    // Broadcast receiver for Wi-Fi state changes
+    private final BroadcastReceiver wifiReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (WifiManager.WIFI_STATE_CHANGED_ACTION.equals(intent.getAction())) {
+                int state = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN);
+                if (state == WifiManager.WIFI_STATE_ENABLED || state == WifiManager.WIFI_STATE_DISABLED) {
+                    Log.d(TAG, "Wi-Fi state changed to: " + state);
+                    if (isEnabled()) {
+                        listener.onEnabled();
+                    } else {
+                        listener.onPermissionsDenied();
+                    }
+                }
+            }
+        }
+    };
+
+    // Broadcast receiver for location state changes
+    private final BroadcastReceiver locationReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (LocationManager.PROVIDERS_CHANGED_ACTION.equals(intent.getAction())) {
+                Log.d(TAG, "Location providers changed");
+                if (isEnabled()) {
+                    listener.onEnabled();
+                } else {
+                    listener.onPermissionsDenied();
+                }
+            }
+        }
+    };
+
+    public WifiDirectPermissions(ComponentActivity activity, Listener listener) {
         this.activity = activity;
         this.listener = listener;
+
+        // Initialize launchers
         permissionsLauncher = activity.registerForActivityResult(
                 new ActivityResultContracts.RequestMultiplePermissions(),
                 this::handlePermissionsResult
         );
         wifiSettingsLauncher = activity.registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    if (wifiP2pIsOn()) {
-                        checkLocation();
-                    } else {
-                        Log.d(TAG, "Wi-Fi still disabled after prompt.");
-                        listener.onWifiDisabled();
-                    }
-                }
+                result -> Log.d(TAG, "Wi-Fi settings prompt ended")
         );
         locationSettingsLauncher = activity.registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    if (locationIsOn()) {
-                        listener.onEnabled();
-                    } else {
-                        Log.d(TAG, "Location still disabled after prompt.");
-                        listener.onLocationDisabled();
-                    }
-                }
+                result -> Log.d(TAG, "Location settings prompt ended")
         );
-    }
 
-    public void setListener(WifiDirectPermissionListener listener) {
-        this.listener = listener;
+        // Register broadcast receivers
+        IntentFilter wifiFilter = new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION);
+        activity.registerReceiver(wifiReceiver, wifiFilter);
+
+        IntentFilter locationFilter = new IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION);
+        activity.registerReceiver(locationReceiver, locationFilter);
     }
 
     public void enable() {
+        if (isEnabled()) {
+            listener.onEnabled();
+            return;
+        }
         if (!hasPermissions()) {
+            Log.d(TAG, "Requesting permissions");
             requestPermissions();
-        } else {
-            checkWifiAndLocation();
+        } else if (!wifiP2pIsOn()) {
+            promptWifi();
+        } else if (!locationIsOn()) {
+            promptLocation();
         }
     }
 
@@ -75,68 +113,46 @@ public class WifiDirectPermissions {
         permissionsLauncher.launch(getPermissions());
     }
 
-    private void checkWifiAndLocation() {
-        if (!wifiP2pIsOn()) {
-            promptWifi();
-        } else if (!locationIsOn()) {
-            promptLocation();
-        } else {
-            listener.onEnabled();
-        }
-    }
-
-    private void checkLocation() {
-        if (!locationIsOn()) {
-            promptLocation();
-        } else {
-            listener.onEnabled();
-        }
-    }
-
     private void handlePermissionsResult(Map<String, Boolean> result) {
-        boolean allGranted = true;
-        for (Map.Entry<String, Boolean> entry : result.entrySet()) {
-            if (!entry.getValue()) {
-                Log.w(TAG, "Permission " + entry.getKey() + " not granted.");
-                allGranted = false;
-            }
-        }
-        if (allGranted) {
-            checkWifiAndLocation();
-        } else {
+        if (!hasPermissions()) {
+            Log.d(TAG, "Permissions not granted");
             listener.onPermissionsDenied();
+        } else if (isEnabled()) {
+            Log.d(TAG, "Permissions granted and all conditions met");
+            listener.onEnabled();
+        } else {
+            Log.d(TAG, "Permissions granted, checking next condition");
+            enable(); // Proceed to check Wi-Fi or location
         }
     }
 
     private boolean hasPermissions() {
-        boolean allGranted = true;
         for (String permission : getPermissions()) {
             if (ContextCompat.checkSelfPermission(activity, permission) != PackageManager.PERMISSION_GRANTED) {
-                Log.w(TAG, "Permission " + permission + " not granted.");
-                allGranted = false;
+                return false;
             }
         }
-        return allGranted;
+        return true;
     }
 
     private String[] getPermissions() {
         ArrayList<String> permissions = new ArrayList<>(Arrays.asList(
-                permission.ACCESS_WIFI_STATE,
-                permission.CHANGE_WIFI_STATE,
-                permission.ACCESS_FINE_LOCATION,
-                permission.ACCESS_COARSE_LOCATION,
-                permission.INTERNET
+                ACCESS_WIFI_STATE,
+                CHANGE_WIFI_STATE,
+                INTERNET,
+                ACCESS_FINE_LOCATION,
+                ACCESS_COARSE_LOCATION
         ));
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(permission.NEARBY_WIFI_DEVICES);
+            permissions.add(NEARBY_WIFI_DEVICES);
         }
 
         return permissions.toArray(new String[0]);
     }
 
     private void promptWifi() {
-        Log.d(TAG, "Prompting to enable WiFi");
+        Log.d(TAG, "Prompting to enable Wi-Fi");
         Intent intent = new Intent(Settings.ACTION_WIFI_SETTINGS);
         wifiSettingsLauncher.launch(intent);
     }
@@ -161,7 +177,8 @@ public class WifiDirectPermissions {
         if (locationManager == null) {
             Log.e(TAG, "LocationManager is null, cannot check location status.");
             return false;
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             return locationManager.isLocationEnabled();
         } else {
             return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
@@ -169,13 +186,13 @@ public class WifiDirectPermissions {
         }
     }
 
-    public interface WifiDirectPermissionListener {
+    public boolean isEnabled() {
+        return hasPermissions() && wifiP2pIsOn() && locationIsOn();
+    }
+
+    public interface Listener {
         void onEnabled();
 
         void onPermissionsDenied();
-
-        void onWifiDisabled();
-
-        void onLocationDisabled();
     }
 }
