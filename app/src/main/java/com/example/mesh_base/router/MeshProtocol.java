@@ -57,19 +57,19 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
 
   public static ProtocolType getByteType(byte[] data) {
     if (data.length < 4) {
-        throw new IllegalArgumentException("Buffer data cannot be determined due to small length size.[CANNOT_DETERMINE_TYPE]");
+      throw new IllegalArgumentException("Buffer data cannot be determined due to small length size.[CANNOT_DETERMINE_TYPE]");
     }
     ByteBuffer buffer = ByteBuffer.wrap(data);
     int messageType = buffer.getInt();
 
-    switch(messageType) {
+    switch (messageType) {
       case 0:
         return ProtocolType.ACK;
       case 1:
         return ProtocolType.SEND_MESSAGE;
       case 2:
         return ProtocolType.RECEIVE_MESSAGE;
-        //add more protocol cases here
+      //add more protocol cases here
       default:
         return ProtocolType.UNKNOWN_MESSAGE_TYPE;
     }
@@ -98,20 +98,20 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
 
   }
   @Override
-  public boolean equals(Object o){
+  public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     MeshProtocol<?> that = (MeshProtocol<?>) o;
-    
+
     return messageType == that.messageType &&
-            remainingHops == that.remainingHops &&
-            messageId == that.messageId &&
-            sender.equals(that.sender) &&
-            body.equals(that.body);
+        remainingHops == that.remainingHops &&
+        messageId == that.messageId &&
+        sender.equals(that.sender) &&
+        body.equals(that.body);
   }
 
   @Override
-  public int hashCode(){
+  public int hashCode() {
     int result = messageType;
     result = 31 * result + remainingHops;
     result = 31 * result + messageId;
@@ -119,5 +119,13 @@ public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshS
     result = 31 * result + body.hashCode();
 
     return result;
+  }
+
+  public ProtocolType getByteType() {
+    byte[] data = this.encode();
+    return getByteType(data);
+  }
+  public int getMessageId() {
+    return this.messageId;
   }
 }
