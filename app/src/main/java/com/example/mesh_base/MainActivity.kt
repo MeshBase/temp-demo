@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.example.mesh_base.ble.BleTestScreen
+import com.example.mesh_base.crypt_handler.CryptTestScreen
 import com.example.mesh_base.mesh_manager.MeshManager
 
 
@@ -17,6 +18,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             BleTestScreen(meshManager = meshManager)
+            //TODO: comment CryptTestScreen() and uncomment BleTestScreen() back
+            //CryptTestScreen();
         }
     }
 }
