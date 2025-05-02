@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "BLE_Dummy"
 include(":app")
- 
+include(":meshdemo")

@@ -42,7 +42,7 @@ import com.example.mesh_base.ui.theme.MeshBaseTheme
 
 
 @Composable
-fun BleTestScreen(meshManager: MeshManager) {
+public fun BleTestScreen(meshManager: MeshManager) {
 
     MeshBaseTheme {
         val TAG = "my_ble_screen"

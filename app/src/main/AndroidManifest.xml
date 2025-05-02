@@ -21,17 +21,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Mesh_Base"
         tools:targetApi="31">
-        <activity
-            android:name="com.example.mesh_base.MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.Mesh_Base">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
     </application>
 
 </manifest>
