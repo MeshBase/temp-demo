@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
         meshManager = MeshManager(this)
 
         setContent {
-//            BleTestScreen(meshManager = meshManager)
+            BleTestScreen(meshManager = meshManager)
             //TODO: comment CryptTestScreen() and uncomment BleTestScreen() back
             //CryptTestScreen();
         }
