@@ -13,7 +13,6 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.KeyFactory;
-import java.io.UnsupportedEncodingException;
 import java.util.UUID;
 
 public class CryptHandler {
@@ -22,15 +21,8 @@ public class CryptHandler {
   private static final int RSA_KEY_SIZE = 2048; // Use a strong key size
   private KeyPair keyPair;
 
-  public void dummyMethod() {
-    Log.d(TAG, "dummyMethod()");
-  }
 
-  public int returnOne() {
-    return 1;
-  }
 
-  // --- 1. Generate RSA Key Pair ---
   public void generateKeyPair() {
     try {
       KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(RSA_ALGORITHM);
@@ -42,17 +34,15 @@ public class CryptHandler {
     }
   }
 
-  // --- 2. Get Public Key ---
   public PublicKey getPublicKey() {
     return (this.keyPair != null) ? this.keyPair.getPublic() : null;
   }
 
-  // --- 2b. Get Private Key ---
   public PrivateKey getPrivateKey() {
     return (this.keyPair != null) ? this.keyPair.getPrivate() : null;
   }
 
-  // --- 3. Fingerprint Public Key (using MD5) ---
+
   public UUID fingerprintPublicKey(PublicKey publicKey) {
     try {
       MessageDigest md = MessageDigest.getInstance("MD5");
@@ -64,7 +54,7 @@ public class CryptHandler {
     }
   }
 
-  // --- 3b. Fingerprint Public Key from Bytes ---
+
   public UUID fingerprintPublicKey(byte[] publicKeyBytes) {
     try {
       PublicKey publicKey = bytesToPublicKey(publicKeyBytes);
@@ -77,7 +67,6 @@ public class CryptHandler {
     }
   }
 
-  // --- 4. Validate Fingerprint and Public Key ---
   public boolean validateFingerprint(PublicKey publicKey, UUID expectedFingerprint) {
     if (publicKey == null || expectedFingerprint == null) {
       return false;
@@ -94,7 +83,7 @@ public class CryptHandler {
     return generatedFingerprint != null && generatedFingerprint.equals(expectedFingerprint);
   }
 
-  // --- 5. RSA Encryption with Public Key ---
+
   public String encrypt(String plaintext, PublicKey publicKey) {
     try {
       javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance(RSA_ALGORITHM);
@@ -103,7 +92,7 @@ public class CryptHandler {
       return Base64.encodeToString(encryptedBytes, Base64.DEFAULT);
     } catch (Exception e) {
       Log.e(TAG, "RSA encryption failed", e);
-      return null; // Return null on error
+      return null;
     }
   }
 
@@ -116,11 +105,11 @@ public class CryptHandler {
       return Base64.encodeToString(encryptedBytes, Base64.DEFAULT);
     } catch (Exception e) {
       Log.e(TAG, "RSA encryption failed", e);
-      return null; // Return null
+      return null;
     }
   }
 
-  // --- 6. RSA Decryption with Private Key ---
+
   public String decrypt(String ciphertext, PrivateKey privateKey) {
     try {
       javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance(RSA_ALGORITHM);
@@ -148,8 +137,8 @@ public class CryptHandler {
     }
   }
 
-  // --- 7. Convert Fingerprint (byte array) to UUID ---
-  private UUID convertBytesToUUID(byte[] bytes) {
+
+  public UUID convertBytesToUUID(byte[] bytes) {
     if (bytes == null || bytes.length != 16) {
       throw new IllegalArgumentException("Byte array must be 16 bytes long for UUID conversion");
     }
@@ -162,7 +151,7 @@ public class CryptHandler {
     return new UUID(msb, lsb);
   }
 
-  // --- 8. Convert PublicKey bytes to PublicKey object
+
   public PublicKey bytesToPublicKey(byte[] keyBytes) {
     try {
       X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
@@ -177,7 +166,7 @@ public class CryptHandler {
     }
   }
 
-  // --- 9. Convert PrivateKey bytes to PrivateKey object
+
   public PrivateKey bytesToPrivateKey(byte[] keyBytes) {
     try {
       PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
@@ -192,6 +181,5 @@ public class CryptHandler {
     }
   }
 
-  // --- 10. Test the methods ---  // Removed main method
 }
 

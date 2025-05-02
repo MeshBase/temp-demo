@@ -17,9 +17,6 @@ fun CryptTestScreen() {
         val tag = "my_crypt_screen"
         val cryptHandler = CryptHandler()
 
-        // 1.  Call CryptHandler methods and Log the output
-        cryptHandler.dummyMethod()
-        Log.d(tag, "My print statement inside the screen")
 
         // Generate Key Pair
         cryptHandler.generateKeyPair()
