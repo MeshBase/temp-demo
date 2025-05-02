@@ -1,14 +1,197 @@
 package com.example.mesh_base.crypt_handler;
 
+import android.util.Base64;
 import android.util.Log;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PublicKey;
+import java.security.PrivateKey;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.KeyFactory;
+import java.io.UnsupportedEncodingException;
+import java.util.UUID;
 
 public class CryptHandler {
-  final String TAG = "my_crypthandler";
-  public  void dummyMethod(){
+  private static final String TAG = "my_crypthandler";
+  private static final String RSA_ALGORITHM = "RSA";
+  private static final int RSA_KEY_SIZE = 2048; // Use a strong key size
+  private KeyPair keyPair;
+
+  public void dummyMethod() {
     Log.d(TAG, "dummyMethod()");
   }
 
-  public int returnOne(){
+  public int returnOne() {
     return 1;
   }
+
+  // --- 1. Generate RSA Key Pair ---
+  public void generateKeyPair() {
+    try {
+      KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(RSA_ALGORITHM);
+      keyPairGenerator.initialize(RSA_KEY_SIZE);
+      this.keyPair = keyPairGenerator.generateKeyPair();
+    } catch (NoSuchAlgorithmException e) {
+      Log.e(TAG, "RSA algorithm not found", e);
+      this.keyPair = null; // Ensure keyPair is null on failure
+    }
+  }
+
+  // --- 2. Get Public Key ---
+  public PublicKey getPublicKey() {
+    return (this.keyPair != null) ? this.keyPair.getPublic() : null;
+  }
+
+  // --- 2b. Get Private Key ---
+  public PrivateKey getPrivateKey() {
+    return (this.keyPair != null) ? this.keyPair.getPrivate() : null;
+  }
+
+  // --- 3. Fingerprint Public Key (using MD5) ---
+  public UUID fingerprintPublicKey(PublicKey publicKey) {
+    try {
+      MessageDigest md = MessageDigest.getInstance("MD5");
+      byte[] digest = md.digest(publicKey.getEncoded());
+      return convertBytesToUUID(digest);
+    } catch (NoSuchAlgorithmException e) {
+      Log.e(TAG, "MD5 algorithm not found", e);
+      return null; // Return null on error
+    }
+  }
+
+  // --- 3b. Fingerprint Public Key from Bytes ---
+  public UUID fingerprintPublicKey(byte[] publicKeyBytes) {
+    try {
+      PublicKey publicKey = bytesToPublicKey(publicKeyBytes);
+      MessageDigest md = MessageDigest.getInstance("MD5");
+      byte[] digest = md.digest(publicKey.getEncoded());
+      return convertBytesToUUID(digest);
+    } catch (NoSuchAlgorithmException e) {
+      Log.e(TAG, "MD5 algorithm not found", e);
+      return null; // Return null on error
+    }
+  }
+
+  // --- 4. Validate Fingerprint and Public Key ---
+  public boolean validateFingerprint(PublicKey publicKey, UUID expectedFingerprint) {
+    if (publicKey == null || expectedFingerprint == null) {
+      return false;
+    }
+    UUID generatedFingerprint = fingerprintPublicKey(publicKey);
+    return generatedFingerprint != null && generatedFingerprint.equals(expectedFingerprint);
+  }
+
+  public boolean validateFingerprint(byte[] publicKeyBytes, UUID expectedFingerprint) {
+    if (publicKeyBytes == null || expectedFingerprint == null) {
+      return false;
+    }
+    UUID generatedFingerprint = fingerprintPublicKey(publicKeyBytes);
+    return generatedFingerprint != null && generatedFingerprint.equals(expectedFingerprint);
+  }
+
+  // --- 5. RSA Encryption with Public Key ---
+  public String encrypt(String plaintext, PublicKey publicKey) {
+    try {
+      javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance(RSA_ALGORITHM);
+      cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, publicKey);
+      byte[] encryptedBytes = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+      return Base64.encodeToString(encryptedBytes, Base64.DEFAULT);
+    } catch (Exception e) {
+      Log.e(TAG, "RSA encryption failed", e);
+      return null; // Return null on error
+    }
+  }
+
+  public String encrypt(String plaintext, byte[] publicKeyBytes) {
+    try {
+      PublicKey publicKey = bytesToPublicKey(publicKeyBytes);
+      javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance(RSA_ALGORITHM);
+      cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, publicKey);
+      byte[] encryptedBytes = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+      return Base64.encodeToString(encryptedBytes, Base64.DEFAULT);
+    } catch (Exception e) {
+      Log.e(TAG, "RSA encryption failed", e);
+      return null; // Return null
+    }
+  }
+
+  // --- 6. RSA Decryption with Private Key ---
+  public String decrypt(String ciphertext, PrivateKey privateKey) {
+    try {
+      javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance(RSA_ALGORITHM);
+      cipher.init(javax.crypto.Cipher.DECRYPT_MODE, privateKey);
+      byte[] decodedBytes = Base64.decode(ciphertext, Base64.DEFAULT);
+      byte[] decryptedBytes = cipher.doFinal(decodedBytes);
+      return new String(decryptedBytes, StandardCharsets.UTF_8);
+    } catch (Exception e) {
+      Log.e(TAG, "RSA decryption failed", e);
+      return null; // Return null on error
+    }
+  }
+
+  public String decrypt(String ciphertext, byte[] privateKeyBytes) {
+    try {
+      PrivateKey privateKey = bytesToPrivateKey(privateKeyBytes);
+      javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance(RSA_ALGORITHM);
+      cipher.init(javax.crypto.Cipher.DECRYPT_MODE, privateKey);
+      byte[] decodedBytes = Base64.decode(ciphertext, Base64.DEFAULT);
+      byte[] decryptedBytes = cipher.doFinal(decodedBytes);
+      return new String(decryptedBytes, StandardCharsets.UTF_8);
+    } catch (Exception e) {
+      Log.e(TAG, "RSA decryption failed", e);
+      return null; // Return null
+    }
+  }
+
+  // --- 7. Convert Fingerprint (byte array) to UUID ---
+  private UUID convertBytesToUUID(byte[] bytes) {
+    if (bytes == null || bytes.length != 16) {
+      throw new IllegalArgumentException("Byte array must be 16 bytes long for UUID conversion");
+    }
+    long msb = 0;
+    long lsb = 0;
+    for (int i = 0; i < 8; i++)
+      msb = (msb << 8) | (bytes[i] & 0xff);
+    for (int i = 8; i < 16; i++)
+      lsb = (lsb << 8) | (bytes[i] & 0xff);
+    return new UUID(msb, lsb);
+  }
+
+  // --- 8. Convert PublicKey bytes to PublicKey object
+  public PublicKey bytesToPublicKey(byte[] keyBytes) {
+    try {
+      X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
+      KeyFactory keyFactory = KeyFactory.getInstance(RSA_ALGORITHM);
+      return keyFactory.generatePublic(spec);
+    } catch (NoSuchAlgorithmException e) {
+      Log.e(TAG, "NoSuchAlgorithmException: " + e.getMessage());
+      return null;
+    } catch (InvalidKeySpecException e) {
+      Log.e(TAG, "InvalidKeySpecException: " + e.getMessage());
+      return null;
+    }
+  }
+
+  // --- 9. Convert PrivateKey bytes to PrivateKey object
+  public PrivateKey bytesToPrivateKey(byte[] keyBytes) {
+    try {
+      PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+      KeyFactory keyFactory = KeyFactory.getInstance(RSA_ALGORITHM);
+      return keyFactory.generatePrivate(spec);
+    } catch (NoSuchAlgorithmException e) {
+      Log.e(TAG, "NoSuchAlgorithmException: " + e.getMessage());
+      return null;
+    } catch (InvalidKeySpecException e) {
+      Log.e(TAG, "InvalidKeySpecException: " + e.getMessage());
+      return null;
+    }
+  }
+
+  // --- 10. Test the methods ---  // Removed main method
 }
+
