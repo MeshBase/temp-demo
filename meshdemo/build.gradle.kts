@@ -41,7 +41,7 @@ android {
 
 dependencies {
 
-    implementation(project(":app"))
+    implementation(project(":mesh_base"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
