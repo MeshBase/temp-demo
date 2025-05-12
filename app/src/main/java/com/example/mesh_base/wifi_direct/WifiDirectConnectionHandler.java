@@ -15,11 +15,13 @@ import android.net.wifi.p2p.WifiP2pManager.Channel;
 import android.net.wifi.p2p.WifiP2pManager.ConnectionInfoListener;
 import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceInfo;
 import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
 import androidx.activity.ComponentActivity;
+import androidx.annotation.RequiresApi;
 import androidx.annotation.RequiresPermission;
 
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
@@ -28,6 +30,7 @@ import com.example.mesh_base.global_interfaces.SendError;
 import com.example.mesh_base.wifi_direct.WifiDirectPermissions.Listener;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -88,14 +91,14 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
             @Override
             public void onEnabled() {
                 Log.d(TAG, "WifiDirect Enabled");
-                wifiDirectEnabled = true;
+//                wifiDirectEnabled = true;
                 start();
             }
 
             @Override
             public void onPermissionsDenied() {
                 Log.d(TAG, "WifiDirect Disabled");
-                wifiDirectEnabled = false;
+//                wifiDirectEnabled = false;
                 stop();
             }
         });
@@ -108,10 +111,9 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
     public void start() {
         Log.d(TAG, "Start Called");
         isOn = true;
-        onConnected();
 
-        if (!supported || !wifiDirectEnabled) {
-            Log.e(TAG, "Cannot start: WiFi Direct not supported or not enabled");
+        if (!supported) {
+            Log.e(TAG, "Cannot start: WiFi Direct not supported");
             return;
         }
 
@@ -125,9 +127,23 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
         addLocalService();
         setupDNSResponseListener();
         serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
+        setServiceResponseListener();
         addServiceRequest();
         discoverServices();
-        onConnected();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            manager.requestP2pState(
+                    channel,
+                    state -> {
+                        if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED) {
+                            wifiDirectEnabled = true;
+                            onConnected();
+                        } else {
+                            wifiDirectEnabled = false;
+                            onDisconnected();
+                        }
+                    }
+            );
+        }
     }
 
     @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES})
@@ -196,6 +212,19 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
             @Override
             public void onFailure(int reason) {
                 Log.e(TAG, "Failed to add service request: " + reason);
+            }
+        });
+    }
+
+    private void setServiceResponseListener() {
+        manager.setServiceResponseListener(channel, new WifiP2pManager.ServiceResponseListener() {
+            @RequiresApi(api = Build.VERSION_CODES.R)
+            @Override
+            public void onServiceAvailable(int i, byte[] bytes, WifiP2pDevice wifiP2pDevice) {
+                String str = new String(bytes, StandardCharsets.UTF_8); // for UTF-8 encoding
+                Log.d(TAG, "Bytes : " + str);
+                Log.d(TAG, "i : " + i);
+                Log.d(TAG, "Device : " + wifiP2pDevice.deviceAddress + wifiP2pDevice.deviceName + wifiP2pDevice.getWfdInfo());
             }
         });
     }
@@ -446,7 +475,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
                         Collection<WifiP2pDevice> refreshedPeers = peerList.getDeviceList();
 
                         for (WifiDirectDeviceWrapper removedDevice : neighborDevices) {
-                            onNeighborDisconnected(removedDevice);
+                            WifiDirectConnectionHandler.this.onNeighborDisconnected(removedDevice);
                         }
 
                         neighborDevices.clear();
@@ -454,7 +483,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
                         for (WifiP2pDevice newDevice : refreshedPeers) {
                             Log.d(TAG, "New Device Address" + newDevice.deviceAddress);
                             WifiDirectDeviceWrapper addedDevice = new WifiDirectDeviceWrapper(UUID.randomUUID(), newDevice);
-                            onNeighborConnected(addedDevice);
+                            WifiDirectConnectionHandler.this.onNeighborConnected(addedDevice);
                             neighborDevices.add(addedDevice);
                         }
                     }
