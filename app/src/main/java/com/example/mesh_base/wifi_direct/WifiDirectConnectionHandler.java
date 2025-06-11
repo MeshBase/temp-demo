@@ -21,8 +21,10 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.activity.ComponentActivity;
+import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.RequiresPermission;
+import androidx.core.content.ContextCompat;
 
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
 import com.example.mesh_base.global_interfaces.Device;
@@ -43,32 +45,62 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
     private static final String TAG = "my_WifiP2pHandler";
     private static final String SERVICE_INSTANCE = "_my mesh base";
     private static final String SERVICE_REG_TYPE = "_presence._tcp";
-
+    private static final long DISCOVERY_INTERVAL = 5000; // 5 seconds
+    protected final Map<UUID, CommunicationManager> chatManagers = new ConcurrentHashMap<>();
     private final Context context;
     private final WifiP2pManager manager;
     private final Channel channel;
-    private final IntentFilter intentFilter;
-    private final Handler handler;
     private final Map<UUID, WifiDirectDeviceWrapper> neighborDevices = new ConcurrentHashMap<>();
-    private final Map<UUID, CommunicationManager> chatManagers = new ConcurrentHashMap<>();
     private final ArrayList<WifiP2pService> discoveredServices = new ArrayList<>();
     private final WifiDirectPermissions permission;
     private final BroadcastReceiver receiver;
     private final boolean supported;
+    private final Handler discoveryHandler;
     private WifiP2pDnsSdServiceRequest serviceRequest;
     private WifiP2pDnsSdServiceInfo localServiceInfo;
     private boolean isOn = false;
     private boolean wifiDirectEnabled = false;
+    private final Runnable discoveryRunnable = new Runnable() {
+        @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES})
+        @Override
+        public void run() {
+            if (isOn && wifiDirectEnabled) {
+                discoverServices();
+                discoveryHandler.postDelayed(this, DISCOVERY_INTERVAL);
+            }
+        }
+    };
     private GroupOwnerSocketHandler groupOwnerSocketHandler;
 
     public WifiDirectConnectionHandler(ComponentActivity context, UUID id) {
         super(context, id);
         this.context = context;
-        this.handler = new Handler(Looper.getMainLooper());
+        this.discoveryHandler = new Handler(Looper.getMainLooper());
         this.manager = (WifiP2pManager) context.getSystemService(Context.WIFI_P2P_SERVICE);
         this.channel = manager != null ? manager.initialize(context, Looper.getMainLooper(), null) : null;
         this.supported = manager != null;
-        this.intentFilter = new IntentFilter();
+        IntentFilter intentFilter = getIntentFilter();
+        this.receiver = new WifiDirectBroadcastReceiver(manager, channel, this);
+        this.permission = new WifiDirectPermissions(context, new Listener() {
+            @Override
+            public void onEnabled() {
+                Log.d(TAG, "WifiDirect Enabled");
+                start();
+            }
+
+            @Override
+            public void onPermissionsDenied() {
+                Log.d(TAG, "WifiDirect Disabled");
+                stop();
+            }
+        });
+
+        ContextCompat.registerReceiver(context, receiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
+    }
+
+    @NonNull
+    private static IntentFilter getIntentFilter() {
+        IntentFilter intentFilter = new IntentFilter();
         // Comment for future me:
         // Indicates whether Wi-Fi Direct is enabled
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
@@ -85,24 +117,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
         // broadcasts at registration because they had been sticky, use the appropriate
         // get method at initialization to obtain the information instead.
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
-        this.receiver = new WifiDirectBroadcastReceiver(manager, channel, this);
-        this.permission = new WifiDirectPermissions(context, new Listener() {
-            @Override
-            public void onEnabled() {
-                Log.d(TAG, "WifiDirect Enabled");
-//                wifiDirectEnabled = true;
-                start();
-            }
-
-            @Override
-            public void onPermissionsDenied() {
-                Log.d(TAG, "WifiDirect Disabled");
-//                wifiDirectEnabled = false;
-                stop();
-            }
-        });
-
-        context.registerReceiver(receiver, intentFilter);
+        return intentFilter;
     }
 
     @SuppressLint("MissingPermission")
@@ -116,6 +131,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
             return;
         }
 
+        startPeerDiscovery();
         // Advertise service with UUID
         Map<String, String> record = new HashMap<>() {
         };
@@ -129,6 +145,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
         setServiceResponseListener();
         addServiceRequest();
         discoverServices();
+        this.discoveryHandler.postDelayed(discoveryRunnable, DISCOVERY_INTERVAL);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             manager.requestP2pState(
                     channel,
@@ -159,6 +176,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
                         }
                         Log.d(TAG, "* Discovered service: " + srcDevice.deviceName);
                         connectToService(service);
+//                         this.addNeighbor(remoteUuid, device.deviceName);
                     }
                 },
                 (fullDomainName, record1, device) -> {
@@ -193,6 +211,11 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
 
     @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES})
     private void addLocalService() {
+        if (localServiceInfo == null) {
+            Log.e(TAG, "Localserviceinfo is null");
+            return;
+        }
+
         manager.addLocalService(channel, localServiceInfo, new ActionListener() {
             @Override
             public void onSuccess() {
@@ -207,6 +230,20 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
     }
 
     private void addServiceRequest() {
+        if (serviceRequest != null) {
+            manager.removeServiceRequest(channel, serviceRequest, new ActionListener() {
+                @Override
+                public void onSuccess() {
+                    Log.d(TAG, "Cleared previous service request");
+                }
+
+                @Override
+                public void onFailure(int reason) {
+                    Log.e(TAG, "Failed to clear service request: " + reason);
+                }
+            });
+        }
+        serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
         manager.addServiceRequest(channel, serviceRequest, new ActionListener() {
             @Override
             public void onSuccess() {
@@ -238,12 +275,12 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
         manager.discoverServices(channel, new ActionListener() {
             @Override
             public void onSuccess() {
-                Log.d(TAG, "Service discovery started");
+                Log.d(TAG, "**** Service discovery started");
             }
 
             @Override
             public void onFailure(int reason) {
-                Log.e(TAG, "Service discovery failed: " + reason);
+                Log.e(TAG, "**** Service discovery failed due to : " + reason);
             }
         });
     }
@@ -277,7 +314,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
         if (p2pInfo.groupFormed) {
             isOn = true;
             if (p2pInfo.isGroupOwner) {
-                Log.d(TAG, "Connected as group owner");
+                Log.d(TAG, "Connecting as group owner ...");
                 try {
                     groupOwnerSocketHandler = new GroupOwnerSocketHandler(id, this);
                     groupOwnerSocketHandler.start();
@@ -285,7 +322,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
                     Log.e(TAG, "Failed to start group owner socket handler", e);
                 }
             } else {
-                Log.d(TAG, "Connected as client");
+                Log.d(TAG, "Connecting as client ...");
                 ClientSocketHandler socketHandler = new ClientSocketHandler(p2pInfo.groupOwnerAddress, id, this);
                 socketHandler.start();
             }
@@ -310,10 +347,20 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
             groupOwnerSocketHandler.stopServer();
             groupOwnerSocketHandler = null;
         }
+
+        for (Device device : neighborDevices.values()) {
+            this.onNeighborDisconnected(device);
+        }
+
         synchronized (neighborDevices) {
             neighborDevices.clear();
         }
+
+        for (CommunicationManager manager : chatManagers.values()) {
+            manager.close();
+        }
         chatManagers.clear();
+
         removeLocalService();
         removeServiceRequest();
         cancelConnection();
@@ -325,6 +372,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
         }
         isOn = false;
         onDisconnected();
+        discoveryHandler.removeCallbacks(discoveryRunnable);
     }
 
     @Override
@@ -371,18 +419,40 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
         return supported;
     }
 
+    @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES})
     public void addNeighbor(UUID uuid, String name) {
-        Log.d(TAG, "addNeighbor called with" + "UUID" + uuid + "Name" + name);
+        Log.d(TAG, "addNeighbor called with UUID: " + uuid + ", Name: " + name);
         WifiP2pDevice p2pDevice = new WifiP2pDevice();
         p2pDevice.deviceName = name;
         WifiDirectDeviceWrapper device = new WifiDirectDeviceWrapper(uuid, p2pDevice);
         synchronized (neighborDevices) {
             neighborDevices.put(device.uuid, device);
         }
-//        chatManagers.put(uuid, communicationManager);
         onNeighborConnected(device);
         Log.d(TAG, "Added neighbor: " + name + " with UUID: " + uuid);
+        // Find corresponding service and connect
+        synchronized (discoveredServices) {
+            for (WifiP2pService service : discoveredServices) {
+                if (service.uuid != null && service.uuid.equals(uuid)) {
+                    connectToService(service);
+                    break;
+                }
+            }
+        }
     }
+
+//    public void addNeighbor(UUID uuid, String name) {
+//        Log.d(TAG, "addNeighbor called with" + "UUID" + uuid + "Name" + name);
+//        WifiP2pDevice p2pDevice = new WifiP2pDevice();
+//        p2pDevice.deviceName = name;
+//        WifiDirectDeviceWrapper device = new WifiDirectDeviceWrapper(uuid, p2pDevice);
+//        synchronized (neighborDevices) {
+//            neighborDevices.put(device.uuid, device);
+//        }
+//        chatManagers.put(uuid, communicationManager);
+//        onNeighborConnected(device);
+//        Log.d(TAG, "Added neighbor: " + name + " with UUID: " + uuid);
+//    }
 
     public void removeNeighbor(UUID uuid) {
         synchronized (neighborDevices) {
@@ -471,8 +541,6 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
 
     @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES})
     public void startPeerDiscovery() {
-        addLocalService();
-
         if (!isEnabled()) {
             return;
         }

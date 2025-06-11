@@ -108,8 +108,8 @@ fun WifiDirectTestScreen(meshManager: MeshManager) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.Start
             ) {
-                Text("WifiDirectIsOn=n$wifiDirectIsOn")
-                Text("UUID=\n   $id")
+                Text("WifiDirectIsOn = $wifiDirectIsOn")
+                Text("UUID = \n$id")
                 Text("WifiDirectIsEnabled=$wifiDirectIsEnabled")
 
                 Button(onClick = {
