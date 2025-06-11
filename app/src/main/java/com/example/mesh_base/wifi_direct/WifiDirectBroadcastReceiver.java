@@ -58,7 +58,7 @@ public class WifiDirectBroadcastReceiver extends BroadcastReceiver {
                 }
                 break;
             case WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION:
-                Log.d(TAG, "Peers list changed");
+                Log.d(TAG, "--------- Peers list changed");
                 connectionHandler.startPeerDiscovery();
                 break;
         }

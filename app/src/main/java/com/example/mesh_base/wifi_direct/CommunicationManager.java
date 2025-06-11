@@ -52,7 +52,7 @@ public class CommunicationManager implements Runnable {
                     WifiP2pDevice p2pDevice = new WifiP2pDevice();
                     p2pDevice.deviceName = remoteName;
                     device = new WifiDirectDeviceWrapper(remoteUuid, p2pDevice);
-                    connectionHandler.addNeighbor(remoteUuid, remoteName, this);
+//                    connectionHandler.addNeighbor(remoteUuid, remoteName, this);
                     Log.d(TAG, "Added neighbor: " + remoteName + " with UUID: " + remoteUuid);
                 } else {
                     Log.e(TAG, "Invalid remote info received: " + infoStr);

@@ -106,9 +106,10 @@ fun WifiDirectTestScreen(meshManager: MeshManager) {
                     .fillMaxSize()
                     .padding(16.dp),
                 verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.Start
             ) {
-                Text("WifiDirectIsOn=$wifiDirectIsOn UUID=$id")
+                Text("WifiDirectIsOn=n$wifiDirectIsOn")
+                Text("UUID=\n   $id")
                 Text("WifiDirectIsEnabled=$wifiDirectIsEnabled")
 
                 Button(onClick = {
@@ -117,8 +118,6 @@ fun WifiDirectTestScreen(meshManager: MeshManager) {
                 }) {
                     Text(if (isOn) "Turn Off" else "Turn On")
                 }
-
-
 
                 LazyColumn {
                     items(connectedDevices) { device ->

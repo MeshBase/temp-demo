@@ -33,7 +33,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -50,7 +49,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
     private final Channel channel;
     private final IntentFilter intentFilter;
     private final Handler handler;
-    private final ArrayList<WifiDirectDeviceWrapper> neighborDevices = new ArrayList<>();
+    private final Map<UUID, WifiDirectDeviceWrapper> neighborDevices = new ConcurrentHashMap<>();
     private final Map<UUID, CommunicationManager> chatManagers = new ConcurrentHashMap<>();
     private final ArrayList<WifiP2pService> discoveredServices = new ArrayList<>();
     private final WifiDirectPermissions permission;
@@ -158,7 +157,8 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
                         synchronized (discoveredServices) {
                             discoveredServices.add(service);
                         }
-                        Log.d(TAG, "Discovered service: " + srcDevice.deviceName);
+                        Log.d(TAG, "* Discovered service: " + srcDevice.deviceName);
+                        connectToService(service);
                     }
                 },
                 (fullDomainName, record1, device) -> {
@@ -171,9 +171,12 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
                                     if (service.device.equals(device)) {
                                         service.uuid = remoteUuid;
                                         Log.d(TAG, "Assigned UUID " + remoteUuid + " to service: " + device.deviceName);
-                                        if (!isOn) {
-                                            connectToService(service);
+
+
+                                        if (!this.neighborDevices.containsKey(remoteUuid)) {
+                                            this.addNeighbor(remoteUuid, device.deviceName);
                                         }
+
                                         break;
                                     }
                                 }
@@ -184,7 +187,8 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
                     } else {
                         Log.w(TAG, "No UUID found in TXT record for device: " + device.deviceName);
                     }
-                });
+                }
+        );
     }
 
     @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES})
@@ -246,6 +250,8 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
 
     @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES})
     public void connectToService(WifiP2pService service) {
+        Log.d(TAG, "Connecting to service called ..." + service.uuid);
+
         if (service.device == null || service.device.deviceAddress == null) {
             Log.e(TAG, "Cannot connect: Invalid device or device address");
             return;
@@ -292,7 +298,7 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
     @Override
     public ArrayList<Device> getNeighbourDevices() {
         synchronized (neighborDevices) {
-            return new ArrayList<>(neighborDevices);
+            return new ArrayList<>(neighborDevices.values());
         }
     }
 
@@ -365,21 +371,22 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
         return supported;
     }
 
-    public void addNeighbor(UUID uuid, String name, CommunicationManager communicationManager) {
+    public void addNeighbor(UUID uuid, String name) {
+        Log.d(TAG, "addNeighbor called with" + "UUID" + uuid + "Name" + name);
         WifiP2pDevice p2pDevice = new WifiP2pDevice();
         p2pDevice.deviceName = name;
         WifiDirectDeviceWrapper device = new WifiDirectDeviceWrapper(uuid, p2pDevice);
         synchronized (neighborDevices) {
-            neighborDevices.add(device);
+            neighborDevices.put(device.uuid, device);
         }
-        chatManagers.put(uuid, communicationManager);
+//        chatManagers.put(uuid, communicationManager);
         onNeighborConnected(device);
         Log.d(TAG, "Added neighbor: " + name + " with UUID: " + uuid);
     }
 
     public void removeNeighbor(UUID uuid) {
         synchronized (neighborDevices) {
-            for (Device device : neighborDevices) {
+            for (Device device : neighborDevices.values()) {
                 if (device.uuid.equals(uuid)) {
                     neighborDevices.remove(device);
                     chatManagers.remove(uuid);
@@ -464,36 +471,37 @@ public class WifiDirectConnectionHandler extends ConnectionHandler implements Co
 
     @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES})
     public void startPeerDiscovery() {
+        addLocalService();
+
         if (!isEnabled()) {
             return;
         }
 
         try {
             Log.d(TAG, "Requesting peers list");
-            manager.requestPeers(channel,
-                    peerList -> {
-                        Collection<WifiP2pDevice> refreshedPeers = peerList.getDeviceList();
-
-                        for (WifiDirectDeviceWrapper removedDevice : neighborDevices) {
-                            WifiDirectConnectionHandler.this.onNeighborDisconnected(removedDevice);
-                        }
-
-                        neighborDevices.clear();
-
-                        for (WifiP2pDevice newDevice : refreshedPeers) {
-                            Log.d(TAG, "New Device Address" + newDevice.deviceAddress);
-                            WifiDirectDeviceWrapper addedDevice = new WifiDirectDeviceWrapper(UUID.randomUUID(), newDevice);
-                            WifiDirectConnectionHandler.this.onNeighborConnected(addedDevice);
-                            neighborDevices.add(addedDevice);
-                        }
-                    }
-            );
+//            manager.requestPeers(channel,
+//                    peerList -> {
+//                        Collection<WifiP2pDevice> refreshedPeers = peerList.getDeviceList();
+//
+//                        for (WifiDirectDeviceWrapper removedDevice : neighborDevices) {
+//                            WifiDirectConnectionHandler.this.onNeighborDisconnected(removedDevice);
+//                        }
+//
+//                        neighborDevices.clear();
+//
+//                        for (WifiP2pDevice newDevice : refreshedPeers) {
+//                            Log.d(TAG, "New Device Address" + newDevice.deviceAddress);
+//                            WifiDirectDeviceWrapper addedDevice = new WifiDirectDeviceWrapper(UUID.randomUUID(), newDevice);
+//                            WifiDirectConnectionHandler.this.onNeighborConnected(addedDevice);
+//                            neighborDevices.add(addedDevice);
+//                        }
+//                    }
+//            );
         } catch (Exception e) {
             Log.d(TAG, "Something went wrong here!!!!");
         }
 
         manager.discoverPeers(channel, new ActionListener() {
-
             @Override
             public void onSuccess() {
                 Log.d(TAG, "Peer discovery Successful;");
