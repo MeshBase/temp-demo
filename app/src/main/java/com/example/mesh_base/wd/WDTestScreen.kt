@@ -127,8 +127,6 @@ fun WDTestScreen(meshManager: MeshManager) {
                     isOn = status.isOn
                     wifiDirectIsOn =
                         status.connectionStatuses[ConnectionHandlersEnum.WIFIDIRECT]?.isOn == true
-                    //TODO: update value when WifiDirect is implemented
-                    wifiDirectIsOn = false
 
                 }
 
