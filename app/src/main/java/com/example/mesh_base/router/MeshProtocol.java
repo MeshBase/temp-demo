@@ -5,10 +5,10 @@ import java.util.UUID;
 import java.util.function.Function;
 
 public abstract class MeshProtocol<T extends MeshSerializer<T>> implements MeshSerializer<MeshProtocol<T>> {
-  //TODO: revert to protected when the BLETestScreen.kt doesn't need to decode bytes no more
+  //TODO: revert to protected when the WDTestScreen.kt doesn't need to decode bytes no more
   public UUID sender;
   public UUID destination;
-  //TODO: revert to protected when the BLETestScreen.kt doesn't need to decode bytes no more
+  //TODO: revert to protected when the WDTestScreen.kt doesn't need to decode bytes no more
   public T body;
   protected int messageType;
   protected int remainingHops;

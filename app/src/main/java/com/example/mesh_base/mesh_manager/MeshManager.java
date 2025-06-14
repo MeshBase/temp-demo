@@ -31,6 +31,12 @@ public class MeshManager {
     private final String TAG = "my_meshManager";
     private boolean isOn = false;
 
+    public void onResult(int code){
+       for (ConnectionHandler handler: connectionHandlers.values()) {
+           Log.d(TAG, "pemission result code sending to handler");
+          handler.onPermissionResult(code);
+       }
+    }
     public MeshManager(ComponentActivity context) {
         Store store = Store.getInstance(context);
         if (store.getId() == null) {

@@ -25,6 +25,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class BLEConnectionHandler extends ConnectionHandler {
   static final String CTRL = "central: ";
+
+  @Override
+  public void onPermissionResult(int code) {
+   Log.d(TAG, "permission result on ble, doesnt matter") ;
+  }
+
   static final String PRFL = "peripheral:";
   final String TAG = "my_bleHandler";
   private final ConcurrentLinkedQueue<BLETask> queue = new ConcurrentLinkedQueue<>();

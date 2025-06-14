@@ -1,4 +1,4 @@
-package com.example.mesh_base.ble
+package com.example.mesh_base.wd
 
 import android.os.Handler
 import android.os.Looper
@@ -42,14 +42,13 @@ import com.example.mesh_base.ui.theme.MeshBaseTheme
 
 
 @Composable
-fun BleTestScreen(meshManager: MeshManager) {
+fun WDTestScreen(meshManager: MeshManager) {
 
     MeshBaseTheme {
-        val TAG = "my_ble_screen"
+        val TAG = "my_wd_screen"
         val context = LocalContext.current
         val connectedDevices = remember { mutableStateListOf<Device>() }
         var isOn by remember { mutableStateOf(false) }
-        var bleIsOn by remember { mutableStateOf(false) }
         var wifiDirectIsOn by remember { mutableStateOf(false) }
         val id = meshManager.id.toString()
 
@@ -126,11 +125,10 @@ fun BleTestScreen(meshManager: MeshManager) {
 
                 override fun onStatusChange(status: Status) {
                     isOn = status.isOn
-//                    bleIsOn =
-////                        status.connectionStatuses[ConnectionHandlersEnum.BLE]?.isOn == true
-//                    //TODO: update value when WifiDirect is implemented
-//                    wifiDirectIsOn = false
-                    bleIsOn = false
+                    wifiDirectIsOn =
+                        status.connectionStatuses[ConnectionHandlersEnum.WIFIDIRECT]?.isOn == true
+                    //TODO: update value when WifiDirect is implemented
+                    wifiDirectIsOn = false
 
                 }
 
@@ -163,7 +161,7 @@ fun BleTestScreen(meshManager: MeshManager) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("BleIsOn=$bleIsOn WifiDirectIsOn=$wifiDirectIsOn UUID=$id")
+                Text("WifiDirectIsOn=$wifiDirectIsOn UUID=$id")
 
                 Button(onClick = {
                     if (isOn) meshManager.off()

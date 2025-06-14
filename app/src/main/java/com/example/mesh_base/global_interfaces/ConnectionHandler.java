@@ -19,6 +19,7 @@ public abstract class ConnectionHandler {
     this.id = id;
   }
 
+    public abstract void onPermissionResult(int code);
   public void subscribe(ConnectionHandlerListener connectionHandlerListener) {
     this.connectionHandlerListeners.add(connectionHandlerListener);
   }
