@@ -10,7 +10,9 @@ import android.content.IntentFilter;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.LocationManager;
+import android.net.NetworkInfo;
 import android.net.wifi.WifiManager;
+import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
 import android.net.wifi.p2p.WifiP2pManager;
@@ -126,24 +128,81 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         }
     }
 
-    @SuppressLint("MissingPermission")
+    //    @SuppressLint("MissingPermission")
     private void registerReceivers() {
         if (wifiReceiver == null) {
             wifiReceiver = new BroadcastReceiver() {
+                @SuppressLint("MissingPermission")
                 @Override
                 public void onReceive(Context c, Intent intent) {
+                    if (!running) {
+                        Log.d(TAG, "ignoring broadcast because stopped");
+                        return;
+                    }
+
                     String action = intent.getAction();
                     if (WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION.equals(action)) {
+                        Log.d(TAG, "peer changed action");
+
                         manager.requestPeers(channel, peers -> {
-                            for (WifiP2pDevice d : peers.getDeviceList()) {
-                                connectToPeer(d);
+                            NetworkInfo networkInfo = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO);
+                            if (networkInfo != null && networkInfo.isConnectedOrConnecting()) {
+                                Log.d(TAG, "is already connecting, so skip connecting to new peers");
+                                return;
                             }
+
+                            if (peers.getDeviceList().isEmpty()) {
+                                Log.d(TAG, "no devices in peer list, cant connect to anyone");
+                                return;
+                            }
+
+                            WifiP2pDevice d = new ArrayList<>(peers.getDeviceList()).get(peers.getDeviceList().size() - 1);
+                            if (d.status == WifiP2pDevice.INVITED) {
+                                Log.d(TAG, "status of device:" + d.deviceName + " " + d.deviceAddress + " is invited" + d.status + "skipping connection");
+                                manager.cancelConnect(channel, new WifiP2pManager.ActionListener() {
+                                    @Override
+                                    public void onSuccess() {
+                                        Log.d(TAG, "cancelled invites");
+                                    }
+
+                                    @Override
+                                    public void onFailure(int i) {
+                                        Log.d(TAG, "could not cancel invites. reason:" + i);
+                                    }
+                                });
+                                return;
+                            }
+                            if (d.status != WifiP2pDevice.AVAILABLE) {
+                                Log.d(TAG, "status of device:" + d.deviceName + " " + d.deviceAddress + " is" + d.status + "skipping connection");
+                                return;
+                            }
+                            Log.d(TAG, "connecting to device:" + d.deviceName + " " + d.deviceAddress + " " + d.status);
+                            WifiP2pConfig cfg = new WifiP2pConfig();
+                            cfg.deviceAddress = d.deviceAddress;
+                            cfg.groupOwnerIntent = 4;
+                            cfg.wps.setup = WpsInfo.PBC;
+
+                            manager.connect(channel, cfg, new WifiP2pManager.ActionListener() {
+                                @Override
+                                public void onSuccess() {
+                                    Log.d(TAG, "connect: success");
+                                }
+
+                                @Override
+                                public void onFailure(int r) {
+                                    Log.e(TAG, "connect: failure=" + r);
+                                }
+                            });
                         });
+
+
                     } else if (WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION.equals(action)) {
                         manager.requestConnectionInfo(channel, info -> {
-                            if (info.groupFormed)
+                            if (info.groupFormed) {
                                 runSocketLoop(info.isGroupOwner, info.groupOwnerAddress);
-                            else scheduleRestartDiscovery();
+                            } else {
+                                scheduleRestartDiscovery();
+                            }
                         });
                     } else if (WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION.equals(action)) {
                         int raw = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -2);
@@ -161,6 +220,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
     @SuppressLint("MissingPermission")
     private void discoverPeers() {
+        Log.d(TAG, "discover Peers called");
         manager.discoverPeers(channel, new WifiP2pManager.ActionListener() {
             @Override
             public void onSuccess() {
@@ -171,26 +231,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             public void onFailure(int reason) {
                 Log.e(TAG, "discoverPeers: failed=" + reason);
                 // retry after 1s
-                scheduler.schedule(WiFiDirectConnectionHandler.this::discoverPeers, 1, TimeUnit.SECONDS);
-            }
-        });
-    }
-
-    @SuppressLint("MissingPermission")
-    private void connectToPeer(WifiP2pDevice d) {
-        Log.d(TAG, "connectToPeer: " + d.deviceAddress);
-        WifiP2pConfig cfg = new WifiP2pConfig();
-        cfg.deviceAddress = d.deviceAddress;
-        cfg.groupOwnerIntent = 15;
-        manager.connect(channel, cfg, new WifiP2pManager.ActionListener() {
-            @Override
-            public void onSuccess() {
-                Log.d(TAG, "connect: success");
-            }
-
-            @Override
-            public void onFailure(int r) {
-                Log.e(TAG, "connect: failure=" + r);
+//                scheduler.schedule(WiFiDirectConnectionHandler.this::discoverPeers, 5, TimeUnit.SECONDS);
             }
         });
     }
@@ -265,10 +306,12 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
     }
 
     private void restartDiscovery() {
-        if (running) {
-            disconnectAll();
-            discoverPeers();
-        }
+        Log.d(TAG, "restart discovery called. but skipping it");
+        return;
+//        if (running) {
+//            disconnectAll();
+//            discoverPeers();
+//        }
     }
 
     @Override
@@ -468,13 +511,15 @@ class WifiDirectPermissions {
                 != PackageManager.PERMISSION_GRANTED) {
             list.add(Manifest.permission.ACCESS_FINE_LOCATION);
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(activity,
                         Manifest.permission.NEARBY_WIFI_DEVICES)
                         != PackageManager.PERMISSION_GRANTED) {
             list.add(Manifest.permission.NEARBY_WIFI_DEVICES);
         }
-        return list.toArray(new String[0]);
+        String[] permissions = list.toArray(new String[0]);
+        Log.d(TAG, "permissions are:" + Arrays.toString(permissions));
+        return permissions;
     }
 
     private boolean locationIsOn() {
