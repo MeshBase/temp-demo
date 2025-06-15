@@ -38,10 +38,13 @@ import com.google.android.gms.tasks.Task;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
@@ -59,6 +62,9 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
     private static final int RETRY_LIMIT = 7;
     private static final int SERVER_PORT = 8888;
     private static final int CHANNEL_RECOVERY_DELAY_MS = 3000;
+    private static final int DISCOVERY_INTERVAL_SEC = 15;
+    private static final int DISCOVERY_DURATION_SEC = 120;
+    private static final int MAX_DATA_SIZE = 10 * 1024 * 1024; // 10MB
 
     private final Activity activity;
     private final WifiP2pManager manager;
@@ -77,7 +83,9 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
     private ServerSocket serverSocket;
     private BroadcastReceiver wifiReceiver;
     private ScheduledFuture<?> discoveryRetryFuture;
+    private ScheduledFuture<?> periodicDiscoveryFuture;
     private boolean discoveryActive = false;
+    private long lastDiscoveryStartTime = 0;
 
     public WiFiDirectConnectionHandler(Activity context, UUID id) {
         super(context, id);
@@ -124,7 +132,8 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
     @Override
     public void enable() {
         Log.d(TAG, "Enabling...");
-        registerReceivers();
+        //EDIT: incase isEnabled is checked, then start() is called without this being invoked
+//        registerReceivers();
         permissions.enable();
     }
 
@@ -149,9 +158,28 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         Log.d(TAG, "Starting...");
         if (!running && isEnabled()) {
             running = true;
+            registerReceivers();
+            startPeriodicDiscovery();
             onConnected();
-            discoverPeers();
         }
+    }
+
+    private void startPeriodicDiscovery() {
+        if (periodicDiscoveryFuture != null) {
+            periodicDiscoveryFuture.cancel(false);
+        }
+
+        periodicDiscoveryFuture = scheduler.scheduleWithFixedDelay(() -> {
+            if (running) {
+                long timeSinceLastDiscovery = System.currentTimeMillis() - lastDiscoveryStartTime;
+                if (timeSinceLastDiscovery > DISCOVERY_DURATION_SEC * 1000 && !hasConnections()) {
+                    Log.d(TAG, "Restarting discovery after idle period");
+                    restartDiscovery();
+                } else {
+                    discoverPeers();
+                }
+            }
+        }, 0, DISCOVERY_INTERVAL_SEC, TimeUnit.SECONDS);
     }
 
     private void registerReceivers() {
@@ -181,6 +209,8 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
                 activity.registerReceiver(wifiReceiver, wifiIntentFilter);
             } catch (Exception e) {
                 Log.e(TAG, "Receiver registration failed", e);
+                //EDIT: not an expected problem
+                stop();
             }
         }
     }
@@ -196,6 +226,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
         if (manager == null || channel == null) {
             Log.e(TAG, "Cannot request peers - manager or channel is null");
+            scheduleChannelRecovery();
             return;
         }
 
@@ -216,11 +247,16 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
                 return;
             }
 
+            Log.d(TAG, "Found " + peerList.getDeviceList().size() + " peers");
+
             // Find first available peer not already connected
             for (WifiP2pDevice device : peerList.getDeviceList()) {
                 if (isConnectableDevice(device)) {
+                    Log.d(TAG, "trying to connect to " + device.deviceName);
                     connectToDevice(device);
                     break; // Connect to one peer at a time
+                } else {
+                    Log.d(TAG, "peer " + device.deviceName + "is not connectable, skipping");
                 }
             }
         });
@@ -234,9 +270,11 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         boolean retryExceeded = existingUuid != null &&
                 retryCount.getOrDefault(existingUuid, 0) >= RETRY_LIMIT;
 
-        return device.status == WifiP2pDevice.AVAILABLE &&
+        boolean canConnect = (device.status == WifiP2pDevice.AVAILABLE) &&
                 !alreadyConnected &&
                 !retryExceeded;
+        Log.d(TAG, device.deviceName + " is connectable=" + canConnect + " due to availability= (3)" + device.status + ") alreadyConnected=" + alreadyConnected + " retryExceeded=" + retryExceeded);
+        return canConnect;
     }
 
     @SuppressLint("MissingPermission")
@@ -264,7 +302,11 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             @Override
             public void onFailure(int reason) {
                 Log.e(TAG, "Connect failed: " + reason);
-                scheduleRestartDiscovery();
+                if (!hasConnections()) {
+                    scheduleRestartDiscovery(false);
+                } else {
+                    Log.d(TAG, "deciding not to restart discovery because there are existing connections");
+                }
             }
         });
     }
@@ -275,7 +317,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
         if (networkInfo == null || p2pInfo == null) {
             Log.e(TAG, "Connection changed with null network info or p2p info");
-            scheduleRestartDiscovery();
+            scheduleRestartDiscovery(true);
             return;
         }
 
@@ -283,8 +325,8 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             Log.d(TAG, "Connection formed - Group Owner: " + p2pInfo.isGroupOwner);
             runSocketLoop(p2pInfo.isGroupOwner, p2pInfo.groupOwnerAddress);
         } else {
-            Log.d(TAG, "Disconnected");
-            scheduleRestartDiscovery();
+            Log.d(TAG, "connection state change not good isConnected:" + networkInfo.isConnected() + " ownerAddress:" + p2pInfo.groupOwnerAddress);
+            scheduleRestartDiscovery(false);
         }
     }
 
@@ -309,7 +351,13 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             return;
         }
 
+        if (hasConnections()) {
+            Log.d(TAG, "not discovering due to having existing connections");
+            return;
+        }
+
         Log.d(TAG, "Discovering peers...");
+        lastDiscoveryStartTime = System.currentTimeMillis();
 
         if (!permissions.hasRequiredPermissions()) {
             Log.w(TAG, "Skipping discovery - permissions missing");
@@ -329,6 +377,14 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
                 Log.d(TAG, "Discovery started");
                 discoveryActive = false;
                 cancelDiscoveryRetry();
+
+                // Schedule automatic restart after discovery duration
+                scheduler.schedule(() -> {
+                    if (running && !hasConnections()) {
+                        Log.d(TAG, "Restarting discovery after full cycle");
+                        restartDiscovery();
+                    }
+                }, DISCOVERY_DURATION_SEC, TimeUnit.SECONDS);
             }
 
             @Override
@@ -338,8 +394,8 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
                 switch (reason) {
                     case WifiP2pManager.BUSY:
-                        Log.w(TAG, "Discovery busy - retrying faster");
-                        scheduleDiscoveryRetry(1);
+                        Log.w(TAG, "Discovery busy - retrying");
+                        scheduleDiscoveryRetry(5);
                         break;
                     case WifiP2pManager.ERROR:
                     case WifiP2pManager.P2P_UNSUPPORTED:
@@ -358,9 +414,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             Log.d(TAG, "Scheduling discovery retry in " + delaySeconds + "s");
             cancelDiscoveryRetry();
             discoveryRetryFuture = scheduler.schedule(() -> {
-                if (running) {
-                    discoverPeers();
-                }
+                discoverPeers();
             }, delaySeconds, TimeUnit.SECONDS);
         }
     }
@@ -395,7 +449,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
                 }
             } catch (IOException e) {
                 Log.e(TAG, "Socket setup failed", e);
-                scheduleRestartDiscovery();
+                scheduleRestartDiscovery(false);
             }
         });
     }
@@ -414,6 +468,8 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             try {
                 Socket clientSocket = serverSocket.accept();
                 socketExecutor.execute(() -> handleSocket(clientSocket));
+            } catch (SocketTimeoutException e) {
+                // Normal timeout, continue accepting
             } catch (IOException e) {
                 if (running) Log.w(TAG, "Server socket error", e);
             }
@@ -462,12 +518,25 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
             // Data receiving loop
             while (running) {
-                int length = in.readInt();
-                if (length <= 0) throw new IOException("Invalid data length");
+                try {
+                    int length = in.readInt();
+                    if (length <= 0 || length > MAX_DATA_SIZE) {
+                        throw new IOException("Invalid data length: " + length);
+                    }
 
-                byte[] data = new byte[length];
-                in.readFully(data);
-                onDataReceived(device, data);
+                    byte[] data = new byte[length];
+                    in.readFully(data);
+                    onDataReceived(device, data);
+                } catch (EOFException e) {
+                    Log.w(TAG, "Orderly disconnect by peer: " + peerUuid);
+                    break;
+                } catch (SocketTimeoutException e) {
+                    // Timeout is normal, continue listening
+                    Log.d(TAG, "Socket timeout for: " + peerUuid);
+                } catch (SocketException e) {
+                    Log.w(TAG, "Socket error for: " + peerUuid + " - " + e.getMessage());
+                    break;
+                }
             }
         } catch (IOException e) {
             Log.e(TAG, "Socket error", e);
@@ -484,11 +553,12 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         activeSockets.remove(peerUuid);
 
         if (device != null) {
+            Log.d(TAG, "handling disconnection for " + device.name);
             onNeighborDisconnected(device);
             retryCount.compute(peerUuid, (k, v) -> (v == null) ? 1 : v + 1);
         }
 
-        scheduleRestartDiscovery();
+        scheduleRestartDiscovery(false);
     }
 
     private void closeSocket(Socket socket) {
@@ -516,10 +586,26 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         macToUuid.clear();
     }
 
-    private void scheduleRestartDiscovery() {
+    private void scheduleRestartDiscovery(boolean force) {
         if (running) {
-            scheduler.schedule(this::restartDiscovery, 1, TimeUnit.SECONDS);
+            long seconds = 1;
+            Log.d(TAG, "scheduling forced=" + force + " restart discovery after " + seconds + "s");
+            scheduler.schedule(() -> {
+                if (force || (!hasConnections())) {
+                    restartDiscovery();
+                } else {
+                    Log.d(TAG, "skipping restartDiscovery forced=" + force + " due to force=" + force + " hasConnections" + hasConnections());
+                }
+            }, seconds, TimeUnit.SECONDS);
+        } else {
+            Log.d(TAG, "skipping scheduling restart discovery because its stopped()");
         }
+    }
+
+    private boolean hasConnections() {
+        boolean hasCons = !connectedById.isEmpty();
+        Log.d(TAG, "has connections ==" + hasCons);
+        return hasCons;
     }
 
     private void restartDiscovery() {
@@ -537,6 +623,11 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
         // Cancel any pending operations
         cancelDiscoveryRetry();
+
+        if (periodicDiscoveryFuture != null) {
+            periodicDiscoveryFuture.cancel(true);
+            periodicDiscoveryFuture = null;
+        }
 
         // Close server socket
         try {
@@ -588,23 +679,28 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         }
     }
 
+
     @Override
     public void send(byte[] data, Device device) throws SendError {
+        // Offload to background thread
         Socket socket = activeSockets.get(device.uuid);
         if (socket == null || socket.isClosed()) {
             throw new SendError("No active connection to " + device.uuid);
         }
 
-        try {
-            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-            out.writeInt(data.length);
-            out.write(data);
-            out.flush();
-        } catch (IOException e) {
-            Log.e(TAG, "Send failed to: " + device.uuid, e);
-            handleDisconnection(device.uuid);
-            throw new SendError(e.getMessage());
-        }
+        socketExecutor.execute(() -> {
+            try {
+                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+                out.writeInt(data.length);
+                out.write(data);
+                out.flush();
+            } catch (IOException e) {
+                Log.e(TAG, "Send failed to: " + device.uuid, e);
+                handleDisconnection(device.uuid);
+                // Throw wrapped in runtime exception since we're in Runnable
+                throw new RuntimeException(new SendError(e.getMessage()));
+            }
+        });
     }
 }
 
