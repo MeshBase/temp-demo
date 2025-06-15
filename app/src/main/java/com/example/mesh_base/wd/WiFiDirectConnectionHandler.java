@@ -164,23 +164,47 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private void startPeriodicDiscovery() {
-        if (periodicDiscoveryFuture != null) {
-            periodicDiscoveryFuture.cancel(false);
-        }
+        Log.d(TAG, "starting periodic discovery");
+        manager.requestGroupInfo(channel, group -> {
+            Log.d(TAG, "got group info group=" + group);
+            if (group != null) {
+                Log.d(TAG, "removing group to then start periodic discovery");
+                manager.removeGroup(channel, new WifiP2pManager.ActionListener() {
+                    @Override
+                    public void onSuccess() {
+                        Log.d(TAG, "Group removed. Now discovering peers.");
+                        startPeriodicDiscovery();
+                    }
 
-        periodicDiscoveryFuture = scheduler.scheduleWithFixedDelay(() -> {
-            if (running) {
-                long timeSinceLastDiscovery = System.currentTimeMillis() - lastDiscoveryStartTime;
-                if (timeSinceLastDiscovery > DISCOVERY_DURATION_SEC * 1000 && !hasConnections()) {
-                    Log.d(TAG, "Restarting discovery after idle period");
-                    restartDiscovery();
-                } else {
-                    discoverPeers();
+                    @Override
+                    public void onFailure(int reason) {
+                        Log.d(TAG, "Failed to remove group: " + reason);
+                        stop();
+                    }
+                });
+            } else {
+                Log.d(TAG, "no existing groups, continue to periodically discover");
+                if (periodicDiscoveryFuture != null) {
+                    periodicDiscoveryFuture.cancel(false);
                 }
+
+                periodicDiscoveryFuture = scheduler.scheduleWithFixedDelay(() -> {
+                    if (running) {
+                        long timeSinceLastDiscovery = System.currentTimeMillis() - lastDiscoveryStartTime;
+                        if (timeSinceLastDiscovery > DISCOVERY_DURATION_SEC * 1000 && !hasConnections()) {
+                            Log.d(TAG, "Restarting discovery after idle period");
+                            restartDiscovery();
+                        } else {
+                            discoverPeers();
+                        }
+                    }
+                }, 0, DISCOVERY_INTERVAL_SEC, TimeUnit.SECONDS);
             }
-        }, 0, DISCOVERY_INTERVAL_SEC, TimeUnit.SECONDS);
+        });
     }
+
 
     private void registerReceivers() {
         if (wifiReceiver == null) {
