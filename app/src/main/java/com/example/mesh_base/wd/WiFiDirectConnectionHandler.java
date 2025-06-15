@@ -74,10 +74,10 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
     private final Map<UUID, Socket> activeSockets = new ConcurrentHashMap<>();
     private final Map<String, UUID> macToUuid = new ConcurrentHashMap<>();
     private final IntentFilter wifiIntentFilter = new IntentFilter();
-    private final ExecutorService socketExecutor = Executors.newCachedThreadPool();
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final WifiDirectPermissions permissions;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private ExecutorService socketExecutor = Executors.newCachedThreadPool();
+    private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private WifiP2pManager.Channel channel;
     private volatile boolean running = false;
     private ServerSocket serverSocket;
@@ -155,12 +155,18 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
     @Override
     public void start() {
-        Log.d(TAG, "Starting...");
         if (!running && isEnabled()) {
+            Log.d(TAG, "Starting...");
             running = true;
+
+            socketExecutor = Executors.newCachedThreadPool();
+            scheduler = Executors.newSingleThreadScheduledExecutor();
+
             registerReceivers();
             startPeriodicDiscovery();
             onConnected();
+        } else {
+            Log.d(TAG, "not starting. already started=" + running + " isEnabled()=" + isEnabled());
         }
     }
 
@@ -168,9 +174,8 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
     private void startPeriodicDiscovery() {
         Log.d(TAG, "starting periodic discovery");
         manager.requestGroupInfo(channel, group -> {
-            Log.d(TAG, "got group info group=" + group);
             if (group != null) {
-                Log.d(TAG, "removing group to then start periodic discovery");
+                Log.d(TAG, "removing group=" + group.getNetworkName() + " to then start periodic discovery");
                 manager.removeGroup(channel, new WifiP2pManager.ActionListener() {
                     @Override
                     public void onSuccess() {
@@ -721,8 +726,6 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             } catch (IOException e) {
                 Log.e(TAG, "Send failed to: " + device.uuid, e);
                 handleDisconnection(device.uuid);
-                // Throw wrapped in runtime exception since we're in Runnable
-                throw new RuntimeException(new SendError(e.getMessage()));
             }
         });
     }
