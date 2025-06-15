@@ -380,11 +380,6 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             return;
         }
 
-        if (hasConnections()) {
-            Log.d(TAG, "not discovering due to having existing connections");
-            return;
-        }
-
         Log.d(TAG, "Discovering peers...");
         lastDiscoveryStartTime = System.currentTimeMillis();
 
@@ -684,7 +679,6 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         scheduler.shutdownNow();
 
         // Cleanup
-        permissions.cleanup();
         connectedById.clear();
         retryCount.clear();
         macToUuid.clear();
@@ -868,22 +862,6 @@ class WifiDirectPermissions {
 
     public boolean hasRequiredPermissions() {
         return buildPermissionList().length == 0;
-    }
-
-    /**
-     * Clean up both receivers
-     */
-    public void cleanup() {
-        try {
-            activity.unregisterReceiver(locationCallback);
-        } catch (Exception e) {
-            Log.w(TAG, "Location receiver unregister failed", e);
-        }
-        try {
-            activity.unregisterReceiver(wifiStateCallback);
-        } catch (Exception e) {
-            Log.w(TAG, "WiFi state receiver unregister failed", e);
-        }
     }
 
     private boolean isWifiOn() {
