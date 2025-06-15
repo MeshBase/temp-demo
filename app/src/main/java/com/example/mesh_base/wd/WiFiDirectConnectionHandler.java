@@ -645,6 +645,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         }
     }
 
+    @SuppressLint("MissingPermission")
     @Override
     public void stop() {
         Log.d(TAG, "Stopping...");
@@ -688,7 +689,27 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         retryCount.clear();
         macToUuid.clear();
 
-        onDisconnected();
+        if (manager != null) {
+            manager.requestGroupInfo(channel, group -> {
+                if (group != null) {
+                    Log.d(TAG, "removing group when stopping=" + group.getNetworkName());
+                    if (running) return;
+                    manager.removeGroup(channel, new WifiP2pManager.ActionListener() {
+                        @Override
+                        public void onSuccess() {
+                            Log.d(TAG, "Group removed after stopping");
+                        }
+
+                        @Override
+                        public void onFailure(int reason) {
+                            Log.d(TAG, "Failed to remove group after stopping: " + reason);
+                        }
+                    });
+                }
+
+                onDisconnected();
+            });
+        }
     }
 
     @Override
