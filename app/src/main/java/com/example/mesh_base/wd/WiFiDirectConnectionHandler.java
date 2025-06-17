@@ -1,25 +1,15 @@
 package com.example.mesh_base.wd;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.IntentSender;
 import android.content.pm.PackageManager;
-import android.location.LocationManager;
-import android.net.NetworkInfo;
+import android.net.nsd.NsdManager;
+import android.net.nsd.NsdServiceInfo;
 import android.net.wifi.WifiManager;
-import android.net.wifi.WpsInfo;
-import android.net.wifi.p2p.WifiP2pConfig;
-import android.net.wifi.p2p.WifiP2pDevice;
-import android.net.wifi.p2p.WifiP2pInfo;
-import android.net.wifi.p2p.WifiP2pManager;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -28,72 +18,41 @@ import androidx.core.content.ContextCompat;
 import com.example.mesh_base.global_interfaces.ConnectionHandler;
 import com.example.mesh_base.global_interfaces.Device;
 import com.example.mesh_base.global_interfaces.SendError;
-import com.google.android.gms.common.api.ResolvableApiException;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.LocationSettingsRequest;
-import com.google.android.gms.location.LocationSettingsResponse;
-import com.google.android.gms.location.Priority;
-import com.google.android.gms.tasks.Task;
 
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.EOFException;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketException;
-import java.net.SocketTimeoutException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+
 
 public class WiFiDirectConnectionHandler extends ConnectionHandler {
-    private static final String TAG = "my_WiFiDirectHandler";
-    private static final int SOCKET_TIMEOUT_MS = 5000;
-    private static final int RETRY_LIMIT = 7;
-    private static final int SERVER_PORT = 8888;
-    private static final int CHANNEL_RECOVERY_DELAY_MS = 3000;
-    private static final int DISCOVERY_INTERVAL_SEC = 15;
-    private static final int DISCOVERY_DURATION_SEC = 120;
-    private static final int MAX_DATA_SIZE = 10 * 1024 * 1024; // 10MB
-
+    private static final String TAG = "my_wifihandler";
+    private static final String SERVICE_TYPE = "_http._tcp."; // mDNS service type
     private final Activity activity;
-    private final WifiP2pManager manager;
-    // Connected peers and sockets
-    private final Map<UUID, Device> connectedById = new ConcurrentHashMap<>();
-    private final Map<UUID, Integer> retryCount = new ConcurrentHashMap<>();
-    private final Map<UUID, Socket> activeSockets = new ConcurrentHashMap<>();
-    private final Map<String, UUID> macToUuid = new ConcurrentHashMap<>();
-    private final IntentFilter wifiIntentFilter = new IntentFilter();
     private final WifiDirectPermissions permissions;
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private ExecutorService socketExecutor = Executors.newCachedThreadPool();
-    private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private WifiP2pManager.Channel channel;
+    private final int AD_PORT = 50000;
+    private final int SERVER_PORT = 50000;
+    private NsdManager nsdManager;
+    private NsdManager.DiscoveryListener discoveryListener;
+    private String SERVICE_NAME_PREFIX = "MeshBase|";
+    private HashMap<UUID, WifiDevice> connectedDevices = new HashMap<>();
+
     private volatile boolean running = false;
-    private ServerSocket serverSocket;
-    private BroadcastReceiver wifiReceiver;
-    private ScheduledFuture<?> discoveryRetryFuture;
-    private ScheduledFuture<?> periodicDiscoveryFuture;
-    private boolean discoveryActive = false;
-    private long lastDiscoveryStartTime = 0;
+    // Connected peers and sockets
 
     public WiFiDirectConnectionHandler(Activity context, UUID id) {
         super(context, id);
         this.activity = context;
-        manager = (WifiP2pManager) context.getSystemService(Context.WIFI_P2P_SERVICE);
-        initializeChannel();
+        nsdManager = (NsdManager) context.getSystemService(Context.NSD_SERVICE);
 
-        permissions = new WifiDirectPermissions(context, new WifiDirectPermissions.Listener() {
+        this.permissions = new WifiDirectPermissions(context, new WifiDirectPermissions.Listener() {
             @Override
             public void onEnabled() {
                 start();
@@ -105,35 +64,198 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             }
         });
 
-        wifiIntentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
-        wifiIntentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
-        wifiIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
-        wifiIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
     }
 
-    private void initializeChannel() {
-        if (manager != null) {
-            channel = manager.initialize(activity, activity.getMainLooper(), new WifiP2pManager.ChannelListener() {
-                @Override
-                public void onChannelDisconnected() {
-                    Log.e(TAG, "Channel disconnected! Attempting recovery...");
-                    handler.postDelayed(() -> {
-                        if (running) {
-                            Log.w(TAG, "Reinitializing channel after disconnect");
-                            initializeChannel();
-                            restartDiscovery();
+
+    private void startDiscovery() {
+        //Stop if already listening
+        discoveryListener = new NsdManager.DiscoveryListener() {
+            @Override
+            public void onStartDiscoveryFailed(String serviceType, int errorCode) {
+                Log.e(TAG, "Discovery failed: Error code:" + errorCode);
+                nsdManager.stopServiceDiscovery(this);
+            }
+
+            @Override
+            public void onStopDiscoveryFailed(String serviceType, int errorCode) {
+                Log.e(TAG, "Stop discovery failed: Error code:" + errorCode);
+            }
+
+            @Override
+            public void onDiscoveryStarted(String serviceType) {
+                Log.d(TAG, "Service discovery started");
+            }
+
+            @Override
+            public void onDiscoveryStopped(String serviceType) {
+                Log.d(TAG, "Service discovery stopped");
+            }
+
+
+            @Override
+            public void onServiceFound(NsdServiceInfo serviceInfo) {
+                Log.d(TAG, "Service found: " + serviceInfo);
+                // Resolve service to get details like IP and port
+                nsdManager.resolveService(serviceInfo, new NsdManager.ResolveListener() {
+                    @Override
+                    public void onResolveFailed(NsdServiceInfo serviceInfo, int errorCode) {
+                        Log.e(TAG, "Resolve failed: " + errorCode);
+                    }
+
+                    @Override
+                    public void onServiceResolved(NsdServiceInfo serviceInfo) {
+                        Log.d(TAG, "Resolved: " + serviceInfo.getServiceName() +
+                                ", Host: " + serviceInfo.getHost() +
+                                ", Port: " + serviceInfo.getPort());
+                        // Use host and port for communication
+
+                        //check if is a mesh base wifi device
+                        String serviceName = serviceInfo.getServiceName();
+
+                        if (!serviceName.startsWith(SERVICE_NAME_PREFIX) || serviceName.length() != (SERVICE_NAME_PREFIX.length() + id.toString().length())) {
+                            Log.d(TAG, "not a mesh base device, not connecting");
+                            return;
                         }
-                    }, CHANNEL_RECOVERY_DELAY_MS);
+
+                        UUID neighborUUID = UUID.fromString(serviceName.substring(SERVICE_NAME_PREFIX.length()));
+                        if (neighborUUID.equals(id)) {
+                            Log.d(TAG, "discovered self, skipping connection");
+                            return;
+                        }
+                        if (neighborUUID.compareTo(id) < 0) {
+                            Log.d(TAG, "has lesser uuid, skipp initiating connection as client");
+                            return;
+                        }
+
+                        WifiDevice device = new WifiDevice(serviceInfo.getHost().getHostName(), serviceInfo.getHost(), serviceInfo.getPort());
+                        WifiDevice existingDevice = connectedDevices.get(neighborUUID);
+                        if (existingDevice != null && device.equals(existingDevice)) {
+                            Log.d(TAG, "rediscovered existing connection, skipping connecting");
+                            return;
+                        }
+
+                        device.connect(getConnectListener(device), id, true);
+                    }
+                });
+            }
+
+
+            @Override
+            public void onServiceLost(NsdServiceInfo serviceInfo) {
+                Log.d(TAG, "Service lost: " + serviceInfo);
+            }
+        };
+
+        nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener);
+    }
+
+    private void handleAcceptedClient(WifiDevice device, Socket clientSocket, UUID selfId) {
+        new Thread(() -> {
+            try {
+                device.setSocket(clientSocket); // Set the socket directly
+                // Perform UUID exchange (server-side: receive first, then send)
+                device.receiveAndStoreUUID();
+                device.sendUUID(selfId);
+                Log.d(TAG, "Completed UUID exchange with: " + device.uuid);
+                getConnectListener(device).onConnectionSucceeded();
+
+                // Start listening for data
+                try (DataInputStream inputStream = new DataInputStream(clientSocket.getInputStream())) {
+                    while (true) {
+                        int size = inputStream.readInt();
+                        byte[] data = new byte[size];
+                        inputStream.readFully(data);
+                        Log.d(TAG, "received data: " + Arrays.toString(data));
+                        getConnectListener(device).onData(data);
+                    }
                 }
-            });
-        }
+            } catch (Exception e) {
+                Log.e(TAG, "Client handling failed: " + e);
+                getConnectListener(device).onConnectionFail();
+            } finally {
+                try {
+                    if (clientSocket != null && !clientSocket.isClosed()) {
+                        clientSocket.close();
+                    }
+                } catch (IOException e) {
+                    Log.e(TAG, "Could not close client socket: " + e);
+                }
+            }
+        }).start();
+    }
+
+    private WifiDevice.Listener getConnectListener(WifiDevice device) {
+        return new WifiDevice.Listener() {
+            @Override
+            public void onData(byte[] data) {
+                onDataReceived(device, data);
+            }
+
+            @Override
+            public void onConnectionFail() {
+                connectedDevices.remove(device.uuid, device);
+                onNeighborDisconnected(device);
+            }
+
+            @Override
+            public void onConnectionSucceeded() {
+                connectedDevices.put(device.uuid, device);
+                onNeighborConnected(device);
+            }
+        };
+    }
+
+    private void startAdvertisement() {
+        NsdServiceInfo serviceInfo = new NsdServiceInfo();
+        serviceInfo.setServiceName("MeshBase|" + id);
+        serviceInfo.setServiceType(SERVICE_TYPE);
+        serviceInfo.setPort(AD_PORT);
+
+        nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, new NsdManager.RegistrationListener() {
+            @Override
+            public void onRegistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
+                Log.e(TAG, "Registration failed: " + errorCode);
+            }
+
+            @Override
+            public void onUnregistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
+                Log.e(TAG, "Unregistration failed: " + errorCode);
+            }
+
+            @Override
+            public void onServiceRegistered(NsdServiceInfo serviceInfo) {
+                Log.d(TAG, "Service registered: " + serviceInfo.getServiceName());
+            }
+
+            @Override
+            public void onServiceUnregistered(NsdServiceInfo serviceInfo) {
+                Log.d(TAG, "Service unregistered");
+            }
+        });
+    }
+
+    private void startAcceptingClients() {
+        new Thread(() -> {
+            try (ServerSocket socket = new ServerSocket(SERVER_PORT);) {
+                socket.setReuseAddress(true);
+                Log.d(TAG, "server socket started");
+                while (true) {
+                    Socket clientSocket = socket.accept();
+                    Log.d(TAG, "client socket accepted");
+                    InetAddress ip = clientSocket.getInetAddress();
+                    String name = "WifiDev:" + ip.toString();
+                    WifiDevice device = new WifiDevice(name, ip, SERVER_PORT);
+                    handleAcceptedClient(device, clientSocket, id);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "could not create server socket:" + e);
+            }
+        }).start();
     }
 
     @Override
     public void enable() {
         Log.d(TAG, "Enabling...");
-        //EDIT: incase isEnabled is checked, then start() is called without this being invoked
-//        registerReceivers();
         permissions.enable();
     }
 
@@ -148,9 +270,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
     @Override
     public boolean isSupported() {
-        boolean supported = manager != null && channel != null;
-        Log.d(TAG, "isSupported: " + supported);
-        return supported;
+        return nsdManager != null;
     }
 
     @Override
@@ -158,552 +278,21 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         if (!running && isEnabled()) {
             Log.d(TAG, "Starting...");
             running = true;
-
-            socketExecutor = Executors.newCachedThreadPool();
-            scheduler = Executors.newSingleThreadScheduledExecutor();
-
-            registerReceivers();
-            startPeriodicDiscovery();
-            onConnected();
+            startDiscovery();
+            startAdvertisement();
+            startAcceptingClients();
         } else {
             Log.d(TAG, "not starting. already started=" + running + " isEnabled()=" + isEnabled());
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private void startPeriodicDiscovery() {
-        Log.d(TAG, "starting periodic discovery");
-        manager.requestGroupInfo(channel, group -> {
-            if (group != null) {
-                Log.d(TAG, "removing group=" + group.getNetworkName() + " to then start periodic discovery");
-                manager.removeGroup(channel, new WifiP2pManager.ActionListener() {
-                    @Override
-                    public void onSuccess() {
-                        Log.d(TAG, "Group removed. Now discovering peers.");
-                        startPeriodicDiscovery();
-                    }
-
-                    @Override
-                    public void onFailure(int reason) {
-                        Log.d(TAG, "Failed to remove group: " + reason);
-                        stop();
-                    }
-                });
-            } else {
-                Log.d(TAG, "no existing groups, continue to periodically discover");
-                if (periodicDiscoveryFuture != null) {
-                    periodicDiscoveryFuture.cancel(false);
-                }
-
-                periodicDiscoveryFuture = scheduler.scheduleWithFixedDelay(() -> {
-                    if (running) {
-                        long timeSinceLastDiscovery = System.currentTimeMillis() - lastDiscoveryStartTime;
-                        if (timeSinceLastDiscovery > DISCOVERY_DURATION_SEC * 1000 && !hasConnections()) {
-                            Log.d(TAG, "Restarting discovery after idle period");
-                            restartDiscovery();
-                        } else {
-                            discoverPeers();
-                        }
-                    }
-                }, 0, DISCOVERY_INTERVAL_SEC, TimeUnit.SECONDS);
-            }
-        });
-    }
-
-
-    private void registerReceivers() {
-        if (wifiReceiver == null) {
-            wifiReceiver = new BroadcastReceiver() {
-                @SuppressLint("MissingPermission")
-                @Override
-                public void onReceive(Context c, Intent intent) {
-                    if (!running) {
-                        Log.d(TAG, "Ignoring broadcast - stopped");
-                        return;
-                    }
-
-                    String action = intent.getAction();
-                    if (WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION.equals(action)) {
-                        handlePeersChanged(intent);
-                    } else if (WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION.equals(action)) {
-                        handleConnectionChanged(intent);
-                    } else if (WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION.equals(action)) {
-                        handleStateChanged(intent);
-                    } else if (WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION.equals(action)) {
-                        Log.d(TAG, "This device changed");
-                    }
-                }
-            };
-            try {
-                activity.registerReceiver(wifiReceiver, wifiIntentFilter);
-            } catch (Exception e) {
-                Log.e(TAG, "Receiver registration failed", e);
-                //EDIT: not an expected problem
-                stop();
-            }
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private void handlePeersChanged(Intent intent) {
-        Log.d(TAG, "Peers changed action");
-
-        if (!permissions.hasRequiredPermissions()) {
-            Log.w(TAG, "Skipping peer connection - permissions missing");
-            return;
-        }
-
-        if (manager == null || channel == null) {
-            Log.e(TAG, "Cannot request peers - manager or channel is null");
-            scheduleChannelRecovery();
-            return;
-        }
-
-        manager.requestPeers(channel, peerList -> {
-            if (peerList == null) {
-                Log.e(TAG, "requestPeers returned null peer list");
-                return;
-            }
-
-            NetworkInfo networkInfo = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO);
-            if (networkInfo != null && networkInfo.isConnectedOrConnecting()) {
-                Log.d(TAG, "Already connecting - skipping new connections");
-                return;
-            }
-
-            if (peerList.getDeviceList().isEmpty()) {
-                Log.d(TAG, "No devices available");
-                return;
-            }
-
-            Log.d(TAG, "Found " + peerList.getDeviceList().size() + " peers");
-
-            // Find first available peer not already connected
-            for (WifiP2pDevice device : peerList.getDeviceList()) {
-                if (isConnectableDevice(device)) {
-                    Log.d(TAG, "trying to connect to " + device.deviceName);
-                    connectToDevice(device);
-                    break; // Connect to one peer at a time
-                } else {
-                    Log.d(TAG, "peer " + device.deviceName + "is not connectable, skipping");
-                }
-            }
-        });
-    }
-
-    private boolean isConnectableDevice(WifiP2pDevice device) {
-        if (device == null) return false;
-
-        UUID existingUuid = macToUuid.get(device.deviceAddress);
-        boolean alreadyConnected = existingUuid != null && connectedById.containsKey(existingUuid);
-        boolean retryExceeded = existingUuid != null &&
-                retryCount.getOrDefault(existingUuid, 0) >= RETRY_LIMIT;
-
-        boolean canConnect = (device.status == WifiP2pDevice.AVAILABLE) &&
-                !alreadyConnected &&
-                !retryExceeded;
-        Log.d(TAG, device.deviceName + " is connectable=" + canConnect + " due to availability= (3)" + device.status + ") alreadyConnected=" + alreadyConnected + " retryExceeded=" + retryExceeded);
-        return canConnect;
-    }
-
-    @SuppressLint("MissingPermission")
-    private void connectToDevice(WifiP2pDevice device) {
-        if (device == null) return;
-
-        Log.d(TAG, "Connecting to: " + device.deviceName + " (" + device.deviceAddress + ")");
-
-        WifiP2pConfig config = new WifiP2pConfig();
-        config.deviceAddress = device.deviceAddress;
-        config.groupOwnerIntent = 4;
-        config.wps.setup = WpsInfo.PBC;
-
-        if (manager == null || channel == null) {
-            Log.e(TAG, "Cannot connect - manager or channel is null");
-            return;
-        }
-
-        manager.connect(channel, config, new WifiP2pManager.ActionListener() {
-            @Override
-            public void onSuccess() {
-                Log.d(TAG, "Connect success");
-            }
-
-            @Override
-            public void onFailure(int reason) {
-                Log.e(TAG, "Connect failed: " + reason);
-                if (!hasConnections()) {
-                    scheduleRestartDiscovery(false);
-                } else {
-                    Log.d(TAG, "deciding not to restart discovery because there are existing connections");
-                }
-            }
-        });
-    }
-
-    private void handleConnectionChanged(Intent intent) {
-        NetworkInfo networkInfo = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO);
-        WifiP2pInfo p2pInfo = intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_INFO);
-
-        if (networkInfo == null || p2pInfo == null) {
-            Log.e(TAG, "Connection changed with null network info or p2p info");
-            scheduleRestartDiscovery(true);
-            return;
-        }
-
-        if (networkInfo.isConnected() && p2pInfo.groupOwnerAddress != null) {
-            Log.d(TAG, "Connection formed - Group Owner: " + p2pInfo.isGroupOwner);
-            runSocketLoop(p2pInfo.isGroupOwner, p2pInfo.groupOwnerAddress);
-        } else {
-            Log.d(TAG, "connection state change not good isConnected:" + networkInfo.isConnected() + " ownerAddress:" + p2pInfo.groupOwnerAddress);
-            scheduleRestartDiscovery(false);
-        }
-    }
-
-    private void handleStateChanged(Intent intent) {
-        int state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -2);
-        String stateText = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED ?
-                "ENABLED" : state == WifiP2pManager.WIFI_P2P_STATE_DISABLED ?
-                "DISABLED" : "UNKNOWN (" + state + ")";
-        Log.d(TAG, "P2P state: " + stateText);
-
-        if (state == WifiP2pManager.WIFI_P2P_STATE_DISABLED) {
-            stop();
-        } else if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED && running) {
-            restartDiscovery();
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private void discoverPeers() {
-        if (discoveryActive) {
-            Log.d(TAG, "Discovery already active");
-            return;
-        }
-
-        Log.d(TAG, "Discovering peers...");
-        lastDiscoveryStartTime = System.currentTimeMillis();
-
-        if (!permissions.hasRequiredPermissions()) {
-            Log.w(TAG, "Skipping discovery - permissions missing");
-            return;
-        }
-
-        if (manager == null || channel == null) {
-            Log.e(TAG, "Cannot discover peers - manager or channel is null");
-            scheduleChannelRecovery();
-            return;
-        }
-
-        discoveryActive = true;
-        manager.discoverPeers(channel, new WifiP2pManager.ActionListener() {
-            @Override
-            public void onSuccess() {
-                Log.d(TAG, "Discovery started");
-                discoveryActive = false;
-                cancelDiscoveryRetry();
-
-                // Schedule automatic restart after discovery duration
-                scheduler.schedule(() -> {
-                    if (running && !hasConnections()) {
-                        Log.d(TAG, "Restarting discovery after full cycle");
-                        restartDiscovery();
-                    }
-                }, DISCOVERY_DURATION_SEC, TimeUnit.SECONDS);
-            }
-
-            @Override
-            public void onFailure(int reason) {
-                Log.e(TAG, "Discovery failed: " + reason);
-                discoveryActive = false;
-
-                switch (reason) {
-                    case WifiP2pManager.BUSY:
-                        Log.w(TAG, "Discovery busy - retrying");
-                        scheduleDiscoveryRetry(5);
-                        break;
-                    case WifiP2pManager.ERROR:
-                    case WifiP2pManager.P2P_UNSUPPORTED:
-                        Log.e(TAG, "Critical discovery error - delaying retry");
-                        scheduleChannelRecovery();
-                        break;
-                    default:
-                        scheduleDiscoveryRetry(5);
-                }
-            }
-        });
-    }
-
-    private void scheduleDiscoveryRetry(int delaySeconds) {
-        if (running) {
-            Log.d(TAG, "Scheduling discovery retry in " + delaySeconds + "s");
-            cancelDiscoveryRetry();
-            discoveryRetryFuture = scheduler.schedule(() -> {
-                discoverPeers();
-            }, delaySeconds, TimeUnit.SECONDS);
-        }
-    }
-
-    private void scheduleChannelRecovery() {
-        if (running) {
-            Log.w(TAG, "Scheduling channel recovery");
-            handler.postDelayed(() -> {
-                if (running) {
-                    Log.w(TAG, "Attempting channel recovery");
-                    initializeChannel();
-                    restartDiscovery();
-                }
-            }, CHANNEL_RECOVERY_DELAY_MS);
-        }
-    }
-
-    private void cancelDiscoveryRetry() {
-        if (discoveryRetryFuture != null && !discoveryRetryFuture.isDone()) {
-            discoveryRetryFuture.cancel(false);
-            discoveryRetryFuture = null;
-        }
-    }
-
-    private void runSocketLoop(boolean isGroupOwner, InetAddress groupOwnerAddress) {
-        socketExecutor.execute(() -> {
-            try {
-                if (isGroupOwner) {
-                    startServerSocket();
-                } else {
-                    connectToGroupOwner(groupOwnerAddress);
-                }
-            } catch (IOException e) {
-                Log.e(TAG, "Socket setup failed", e);
-                scheduleRestartDiscovery(false);
-            }
-        });
-    }
-
-    private void startServerSocket() throws IOException {
-        Log.d(TAG, "Starting as Group Owner");
-
-        if (serverSocket != null && !serverSocket.isClosed()) {
-            serverSocket.close();
-        }
-
-        serverSocket = new ServerSocket(SERVER_PORT);
-        serverSocket.setSoTimeout(SOCKET_TIMEOUT_MS);
-
-        while (running) {
-            try {
-                Socket clientSocket = serverSocket.accept();
-                socketExecutor.execute(() -> handleSocket(clientSocket));
-            } catch (SocketTimeoutException e) {
-                // Normal timeout, continue accepting
-            } catch (IOException e) {
-                if (running) Log.w(TAG, "Server socket error", e);
-            }
-        }
-    }
-
-    private void connectToGroupOwner(InetAddress groupOwnerAddress) throws IOException {
-        if (groupOwnerAddress == null) {
-            throw new IOException("Group owner address is null");
-        }
-
-        Log.d(TAG, "Connecting to Group Owner: " + groupOwnerAddress);
-
-        Socket socket = new Socket(groupOwnerAddress, SERVER_PORT);
-        socket.setSoTimeout(SOCKET_TIMEOUT_MS);
-        handleSocket(socket);
-    }
-
-    private void handleSocket(Socket socket) {
-        UUID peerUuid = null;
-        try (DataInputStream in = new DataInputStream(socket.getInputStream());
-             DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
-
-            // Exchange UUIDs
-            out.writeLong(id.getMostSignificantBits());
-            out.writeLong(id.getLeastSignificantBits());
-            out.flush();
-
-            peerUuid = new UUID(in.readLong(), in.readLong());
-
-            // Check retry limit
-            if (retryCount.getOrDefault(peerUuid, 0) >= RETRY_LIMIT) {
-                Log.w(TAG, "Retry limit exceeded for: " + peerUuid);
-                return;
-            }
-
-            // Register new device
-            Device device = new Device(peerUuid, socket.getInetAddress().getHostAddress()) {
-            };
-            retryCount.remove(peerUuid);  // Reset retry count
-            connectedById.put(peerUuid, device);
-            activeSockets.put(peerUuid, socket);
-            onNeighborConnected(device);
-
-            Log.d(TAG, "Socket established with: " + peerUuid);
-
-            // Data receiving loop
-            while (running) {
-                try {
-                    int length = in.readInt();
-                    if (length <= 0 || length > MAX_DATA_SIZE) {
-                        throw new IOException("Invalid data length: " + length);
-                    }
-
-                    byte[] data = new byte[length];
-                    in.readFully(data);
-                    onDataReceived(device, data);
-                } catch (EOFException e) {
-                    Log.w(TAG, "Orderly disconnect by peer: " + peerUuid);
-                    break;
-                } catch (SocketTimeoutException e) {
-                    // Timeout is normal, continue listening
-                    Log.d(TAG, "Socket timeout for: " + peerUuid);
-                } catch (SocketException e) {
-                    Log.w(TAG, "Socket error for: " + peerUuid + " - " + e.getMessage());
-                    break;
-                }
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Socket error", e);
-        } finally {
-            if (peerUuid != null) {
-                handleDisconnection(peerUuid);
-            }
-            closeSocket(socket);
-        }
-    }
-
-    private void handleDisconnection(UUID peerUuid) {
-        Device device = connectedById.remove(peerUuid);
-        activeSockets.remove(peerUuid);
-
-        if (device != null) {
-            Log.d(TAG, "handling disconnection for " + device.name);
-            onNeighborDisconnected(device);
-            retryCount.compute(peerUuid, (k, v) -> (v == null) ? 1 : v + 1);
-        }
-
-        scheduleRestartDiscovery(false);
-    }
-
-    private void closeSocket(Socket socket) {
-        try {
-            if (socket != null && !socket.isClosed()) {
-                socket.close();
-            }
-        } catch (IOException e) {
-            Log.w(TAG, "Error closing socket", e);
-        }
-    }
-
-    private void disconnectAll() {
-        Log.d(TAG, "Disconnecting all peers");
-
-        // Close all sockets
-        new ArrayList<>(activeSockets.values()).forEach(this::closeSocket);
-        activeSockets.clear();
-
-        // Notify disconnections
-        new ArrayList<>(connectedById.values()).forEach(this::onNeighborDisconnected);
-        connectedById.clear();
-
-        retryCount.clear();
-        macToUuid.clear();
-    }
-
-    private void scheduleRestartDiscovery(boolean force) {
-        if (running) {
-            long seconds = 1;
-            Log.d(TAG, "scheduling forced=" + force + " restart discovery after " + seconds + "s");
-            scheduler.schedule(() -> {
-                if (force || (!hasConnections())) {
-                    restartDiscovery();
-                } else {
-                    Log.d(TAG, "skipping restartDiscovery forced=" + force + " due to force=" + force + " hasConnections" + hasConnections());
-                }
-            }, seconds, TimeUnit.SECONDS);
-        } else {
-            Log.d(TAG, "skipping scheduling restart discovery because its stopped()");
-        }
-    }
-
-    private boolean hasConnections() {
-        boolean hasCons = !connectedById.isEmpty();
-        Log.d(TAG, "has connections ==" + hasCons);
-        return hasCons;
-    }
-
-    private void restartDiscovery() {
-        if (running) {
-            Log.d(TAG, "Restarting discovery");
-            disconnectAll();
-            discoverPeers();
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    @Override
     public void stop() {
         Log.d(TAG, "Stopping...");
         running = false;
-
-        // Cancel any pending operations
-        cancelDiscoveryRetry();
-
-        if (periodicDiscoveryFuture != null) {
-            periodicDiscoveryFuture.cancel(true);
-            periodicDiscoveryFuture = null;
+        if (discoveryListener != null) {
+            nsdManager.stopServiceDiscovery(discoveryListener);
         }
-
-        // Close server socket
-        try {
-            if (serverSocket != null) serverSocket.close();
-        } catch (IOException ignored) {
-        }
-
-        // Close all client sockets
-        new ArrayList<>(activeSockets.values()).forEach(this::closeSocket);
-        activeSockets.clear();
-
-        // Unregister receiver
-        if (wifiReceiver != null) {
-            try {
-                activity.unregisterReceiver(wifiReceiver);
-            } catch (Exception e) {
-                Log.w(TAG, "Receiver unregistration failed", e);
-            }
-            wifiReceiver = null;
-        }
-
-        // Shutdown executors
-        socketExecutor.shutdownNow();
-        scheduler.shutdownNow();
-
-        // Cleanup
-        connectedById.clear();
-        retryCount.clear();
-        macToUuid.clear();
-
-        if (manager != null) {
-            manager.requestGroupInfo(channel, group -> {
-                if (group != null) {
-                    Log.d(TAG, "removing group when stopping=" + group.getNetworkName());
-                    if (running) return;
-                    manager.removeGroup(channel, new WifiP2pManager.ActionListener() {
-                        @Override
-                        public void onSuccess() {
-                            Log.d(TAG, "Group removed after stopping");
-                        }
-
-                        @Override
-                        public void onFailure(int reason) {
-                            Log.d(TAG, "Failed to remove group after stopping: " + reason);
-                        }
-                    });
-                }
-
-                onDisconnected();
-            });
-        }
+        onDisconnected();
     }
 
     @Override
@@ -713,7 +302,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
     @Override
     public ArrayList<Device> getNeighbourDevices() {
-        return new ArrayList<>(connectedById.values());
+        return new ArrayList<>(connectedDevices.values());
     }
 
     @Override
@@ -723,83 +312,57 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         }
     }
 
-
     @Override
     public void send(byte[] data, Device device) throws SendError {
-        // Offload to background thread
-        Socket socket = activeSockets.get(device.uuid);
-        if (socket == null || socket.isClosed()) {
-            throw new SendError("No active connection to " + device.uuid);
+        WifiDevice foundDevice = connectedDevices.get(device.uuid);
+        if (foundDevice == null) {
+            throw new SendError("device:" + device.name + " not found");
         }
 
-        socketExecutor.execute(() -> {
-            try {
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                out.writeInt(data.length);
-                out.write(data);
-                out.flush();
-            } catch (IOException e) {
-                Log.e(TAG, "Send failed to: " + device.uuid, e);
-                handleDisconnection(device.uuid);
-            }
-        });
+        if (!foundDevice.send(data)) {
+            throw new SendError("could not send data to :" + device.name);
+        }
     }
 }
 
 class WifiDirectPermissions {
     private static final String TAG = "my_wifiDirect-permissions";
-    private static final int PERMISSIONS_REQUEST_CODE = 1768;
-    private static final int LOCATION_REQUEST_CODE = 1798;
+    private static final int PERMISSIONS_REQUEST_CODE = 1368;
     private final Activity activity;
     private final Listener listener;
-    private final BroadcastReceiver locationCallback;
-    private final BroadcastReceiver wifiStateCallback;
 
     public WifiDirectPermissions(Activity activity, Listener listener) {
         this.activity = activity;
         this.listener = listener;
 
-        // 1) Listen for Wi‑Fi being turned on/off
-        IntentFilter wifiFilter = new IntentFilter(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
-        wifiStateCallback = new BroadcastReceiver() {
+        IntentFilter wifiFilter = new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION);
+
+        BroadcastReceiver wifiStateCallback = new BroadcastReceiver() {
             @Override
-            public void onReceive(Context c, Intent intent) {
-                if (WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION.equals(intent.getAction())) {
-                    int raw = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -2);
-                    Log.d(TAG, "RAW P2P_EXTRA_WIFI_STATE = " + raw);
-                    String text = raw == WifiP2pManager.WIFI_P2P_STATE_ENABLED
-                            ? "ENABLED" : raw == WifiP2pManager.WIFI_P2P_STATE_DISABLED
-                            ? "DISABLED" : "UNKNOWN(" + raw + ")";
-                    if (raw == WifiP2pManager.WIFI_P2P_STATE_ENABLED) {
+            public void onReceive(Context context, Intent intent) {
+                int wifiState = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN);
+                switch (wifiState) {
+                    case WifiManager.WIFI_STATE_ENABLED:
+                        Log.d(TAG, "Wi-Fi enabled");
                         enable();
-                    } else {
+                        break;
+                    case WifiManager.WIFI_STATE_DISABLED:
+                        Log.d(TAG, "Wi-Fi disabled");
                         listener.onDisabled();
-                    }
+                        break;
+                    case WifiManager.WIFI_STATE_ENABLING:
+                        Log.d(TAG, "Wi-Fi enabling");
+                        break;
+                    case WifiManager.WIFI_STATE_DISABLING:
+                        Log.d(TAG, "Wi-Fi disabling");
+                        break;
+                    default:
+                        Log.d(TAG, "Wi-Fi state unknown");
+                        break;
                 }
             }
         };
         activity.registerReceiver(wifiStateCallback, wifiFilter);
-
-        // 2) Listen for Location toggles
-        IntentFilter locationFilter = new IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION);
-        locationCallback = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context c, Intent intent) {
-                String action = intent.getAction();
-                Log.d(TAG, "Location toggle broadcast: " + action + " → isOn=" + locationIsOn());
-                if (!locationIsOn()) {
-                    Log.d(TAG, "Location OFF → onDisabled");
-                    listener.onDisabled();
-                } else if (isEnabled()) {
-                    Log.d(TAG, "Location ON & all other requirements OK → onEnabled");
-                    listener.onEnabled();
-                } else {
-                    Log.d(TAG, "Location ON but other requirements missing → enable()");
-                    enable();
-                }
-            }
-        };
-        activity.registerReceiver(locationCallback, locationFilter);
     }
 
     /**
@@ -819,13 +382,6 @@ class WifiDirectPermissions {
         if (perms.length > 0) {
             Log.d(TAG, "Requesting permissions: " + Arrays.toString(perms));
             activity.requestPermissions(perms, PERMISSIONS_REQUEST_CODE);
-            return;
-        }
-
-        // 2) Location toggle
-        if (!locationIsOn()) {
-            Log.d(TAG, "Location OFF → prompting location settings");
-            promptLocation();
             return;
         }
 
@@ -849,19 +405,10 @@ class WifiDirectPermissions {
                 enable();
             }
 
-        } else if (requestCode == LOCATION_REQUEST_CODE) {
-            boolean locOn = locationIsOn();
-            Log.d(TAG, "Location settings result → isOn=" + locOn);
-            if (locOn && buildPermissionList().length == 0 && isWifiOn()) {
-                listener.onEnabled();
-            } else {
-                listener.onDisabled();
-            }
+        } else {
+            Log.d(TAG, "unknown request code");
         }
-    }
 
-    public boolean hasRequiredPermissions() {
-        return buildPermissionList().length == 0;
     }
 
     private boolean isWifiOn() {
@@ -874,31 +421,21 @@ class WifiDirectPermissions {
 
     private String[] buildPermissionList() {
         ArrayList<String> list = new ArrayList<>();
-        if (ContextCompat.checkSelfPermission(activity,
-                Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            list.add(Manifest.permission.ACCESS_FINE_LOCATION);
+
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_WIFI_STATE) != PackageManager.PERMISSION_GRANTED) {
+            list.add(Manifest.permission.ACCESS_WIFI_STATE);
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(activity,
-                        Manifest.permission.NEARBY_WIFI_DEVICES)
-                        != PackageManager.PERMISSION_GRANTED) {
-            list.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.INTERNET) != PackageManager.PERMISSION_GRANTED) {
+            list.add(Manifest.permission.INTERNET);
         }
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CHANGE_WIFI_MULTICAST_STATE) != PackageManager.PERMISSION_GRANTED) {
+            list.add(Manifest.permission.CHANGE_WIFI_MULTICAST_STATE);
+        }
+
         String[] permissions = list.toArray(new String[0]);
         Log.d(TAG, "permissions are:" + Arrays.toString(permissions));
         return permissions;
-    }
-
-    private boolean locationIsOn() {
-        LocationManager mgr = (LocationManager)
-                activity.getSystemService(Context.LOCATION_SERVICE);
-        if (mgr == null) return false;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return mgr.isLocationEnabled();
-        }
-        return mgr.isProviderEnabled(LocationManager.GPS_PROVIDER)
-                || mgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
     }
 
     private void promptWifi() {
@@ -906,48 +443,162 @@ class WifiDirectPermissions {
         activity.startActivity(i);
     }
 
-    private void promptLocation() {
-        LocationRequest req = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY).build();
-        LocationSettingsRequest settingsReq = new LocationSettingsRequest.Builder()
-                .addLocationRequest(req).build();
-
-        Task<LocationSettingsResponse> task = LocationServices
-                .getSettingsClient(activity)
-                .checkLocationSettings(settingsReq);
-
-        task.addOnSuccessListener(activity, r -> {
-            Log.d(TAG, "Location already ON → re-enter enable()");
-            enable();
-        });
-        task.addOnFailureListener(activity, e -> {
-            Log.d(TAG, "Need Location settings resolution: " + e);
-            if (e instanceof ResolvableApiException) {
-                try {
-                    ((ResolvableApiException) e)
-                            .startResolutionForResult(activity, LOCATION_REQUEST_CODE);
-                } catch (IntentSender.SendIntentException ex) {
-                    Log.e(TAG, "Error launching location settings", ex);
-                    listener.onDisabled();
-                }
-            } else {
-                listener.onDisabled();
-            }
-        });
-    }
-
     public boolean isEnabled() {
         boolean wifiOn = isWifiOn();
         boolean permsOk = buildPermissionList().length == 0;
-        boolean locOn = locationIsOn();
         Log.d(TAG, "isEnabled(): wifiOn=" + wifiOn
-                + " permsOk=" + permsOk
-                + " locationOn=" + locOn);
-        return wifiOn && permsOk && locOn;
+                + " permsOk=" + permsOk);
+        return wifiOn && permsOk;
     }
 
     public interface Listener {
         void onEnabled();
 
         void onDisabled();
+    }
+}
+
+class WifiDevice extends Device {
+    private final String TAG;
+    private final int port;
+    private InetAddress ip;
+    private Socket socket;
+    private Listener listener;
+
+    public WifiDevice(String name, InetAddress ip, int port) {
+        super(null, name);
+        TAG = "my_wifidevice:" + name;
+        this.port = port;
+        this.ip = ip;
+    }
+
+    public UUID bytesToUUID(byte[] bytes) {
+        if (bytes.length != 16) {
+            throw new IllegalArgumentException("Byte array must be 16 bytes long");
+        }
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        long mostSigBits = buffer.getLong();
+        long leastSigBits = buffer.getLong();
+        return new UUID(mostSigBits, leastSigBits);
+    }
+
+    public byte[] uuidToBytes(UUID uuid) {
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        buffer.putLong(uuid.getMostSignificantBits());
+        buffer.putLong(uuid.getLeastSignificantBits());
+        return buffer.array();
+    }
+
+    public void sendUUID(UUID selfId) throws IOException {
+        //send uuid
+        socket.getOutputStream().write(uuidToBytes(selfId));
+        socket.getOutputStream().flush();
+    }
+
+    public void receiveAndStoreUUID() throws Exception {
+        //accept uuid
+        DataInputStream inputStream = new DataInputStream(socket.getInputStream());
+        int UUID_SIZE = 16;
+        byte[] uuidBytes = new byte[UUID_SIZE];
+        int readBytes = inputStream.read(uuidBytes);
+        if (readBytes != UUID_SIZE) {
+            throw new Exception("received uuid of size:" + readBytes + " instead of:" + UUID_SIZE);
+        }
+
+        this.uuid = bytesToUUID(uuidBytes);
+        Log.d(TAG, "Resolved Bytes ... " + bytesToUUID(uuidBytes));
+    }
+
+    public void connect(Listener listener, UUID selfId, boolean asClient) {
+        Log.d(TAG, "trying to connect to " + name);
+        if (this.listener != null) {
+            Log.e(TAG, "should not connect twice");
+            return;
+        }
+
+        this.listener = listener;
+        new Thread(() -> {
+            try {
+                socket = new Socket(ip, port);
+                Log.d(TAG, "socket opened with:" + ip);
+                listener.onConnectionSucceeded();
+
+                if (asClient) {
+                    sendUUID(selfId);
+                    receiveAndStoreUUID();
+                } else {
+                    receiveAndStoreUUID();
+                    sendUUID(selfId);
+                }
+
+                Log.d(TAG, "completed uuid exchange with:" + uuid);
+                DataInputStream inputStream = new DataInputStream(socket.getInputStream());
+                while (true) {
+                    int size = inputStream.readInt();
+                    byte[] data = new byte[size];
+                    inputStream.readFully(data);
+                    Log.d(TAG, "received data:" + Arrays.toString(data));
+                    listener.onData(data);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "connection failed:" + e);
+            } finally {
+                listener.onConnectionFail();
+                try {
+                    if (socket != null) {
+                        socket.close();
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "could not close socket:" + e);
+                }
+            }
+
+        }).start();
+    }
+
+    public void setSocket(Socket socket) {
+        this.socket = socket;
+    }
+
+    public boolean send(byte[] data) {
+        if (socket == null || uuid == null) {
+            Log.d(TAG, "cant send because socketIsNull=" + (socket == null) + " uuidIsNull=" + (uuid == null));
+            return false;
+        }
+
+        new Thread(() -> {
+            try {
+                OutputStream outputStream = socket.getOutputStream();
+                outputStream.write(data.length);
+                outputStream.write(data);
+                outputStream.flush();
+                Log.d(TAG, "send data:" + Arrays.toString(data));
+            } catch (Exception e) {
+                Log.e(TAG, "sending failed" + e);
+                listener.onConnectionFail();
+                try {
+                    if (socket != null) {
+                        socket.close();
+                    }
+                } catch (Exception e2) {
+                    Log.e(TAG, "could not close socket after send fail:" + e2);
+                }
+            }
+        }
+        ).start();
+        return true;
+    }
+
+    public boolean equals(WifiDevice other) {
+        return other.uuid.equals(uuid) && other.port == port && other.ip.equals(ip);
+    }
+
+
+    public interface Listener {
+        void onData(byte[] data);
+
+        void onConnectionFail();
+
+        void onConnectionSucceeded();
     }
 }
