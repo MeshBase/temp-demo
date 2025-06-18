@@ -21,15 +21,18 @@ import com.example.mesh_base.global_interfaces.SendError;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 
 public class WiFiDirectConnectionHandler extends ConnectionHandler {
@@ -161,7 +164,9 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
             @Override
             public void onConnectionFail() {
+                Log.d(TAG, "onConnectionFail()");
                 if (connectedDevices.containsKey(device.uuid)) {
+                    Log.d(TAG, "key for fail exists");
                     connectedDevices.remove(device.uuid, device);
                     onNeighborDisconnected(device);
                 }
@@ -169,9 +174,11 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
             @Override
             public void onConnectionSucceeded() {
+                Log.d(TAG, "onConnectionSucceeded()");
                 if (connectedDevices.containsKey(device.uuid)) {
                     device.disconnect();
                 } else {
+                    Log.d(TAG, "is new connection succeeded()");
                     connectedDevices.put(device.uuid, device);
                     onNeighborConnected(device);
                 }
@@ -465,11 +472,21 @@ class WifiDirectPermissions {
 }
 
 class WifiDevice extends Device {
+
+    private static final int HEARTBEAT_SIGNAL = -1; // Special value for heartbeat
+    private static final byte[] HEARTBEAT_MESSAGE =
+            ByteBuffer.allocate(4).putInt(HEARTBEAT_SIGNAL).array();
+    private static final int HEARTBEAT_INTERVAL = 500;
+    private static final int HEARTBEAT_TIMEOUT = 3000;
+    private final AtomicBoolean isDisconnected = new AtomicBoolean(false);
     private final String TAG;
     private int port = 0;
     private InetAddress ip;
     private Socket socket;
     private Listener listener;
+    private volatile long lastReceivedTime = 0;
+    private Thread heartbeatSender;
+    private Thread watchdog;
 
     /**
      * Constructor for a server device
@@ -495,6 +512,71 @@ class WifiDevice extends Device {
         super(null, name);
         TAG = "my_wifidevice:" + name;
         this.ip = ip;
+    }
+
+    private void startHeartbeatMechanism() {
+        // Reset last received time
+        lastReceivedTime = System.currentTimeMillis();
+
+        // Start heartbeat sender thread
+        heartbeatSender = new Thread(() -> {
+            try {
+                DataOutputStream outputStream = new DataOutputStream(socket.getOutputStream());
+                while (!isDisconnected.get() && !socket.isClosed()) {
+                    try {
+                        // Send heartbeat
+                        outputStream.write(HEARTBEAT_MESSAGE);
+                        outputStream.flush();
+                        Log.d(TAG, "Sent heartbeat to " + uuid);
+
+                        // Wait for next heartbeat
+                        Thread.sleep(HEARTBEAT_INTERVAL);
+                    } catch (InterruptedException e) {
+                        break;  // Exit on interruption
+                    } catch (IOException e) {
+                        Log.e(TAG, "Heartbeat send error", e);
+                        handleDisconnection();
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Heartbeat setup failed", e);
+                handleDisconnection();
+            }
+        });
+        heartbeatSender.start();
+
+        // Start watchdog thread
+        watchdog = new Thread(() -> {
+            while (!isDisconnected.get() && !socket.isClosed()) {
+                try {
+                    Thread.sleep(500);  // Check every second
+                    long currentTime = System.currentTimeMillis();
+                    if (currentTime - lastReceivedTime > HEARTBEAT_TIMEOUT) {
+                        Log.e(TAG, "Heartbeat timeout! Disconnecting...");
+                        handleDisconnection();
+                        break;
+                    }
+                } catch (InterruptedException e) {
+                    break;  // Exit on interruption
+                }
+            }
+        });
+        watchdog.start();
+    }
+
+
+    private void handleDisconnection() {
+        if (isDisconnected.compareAndSet(false, true)) {
+            Log.d(TAG, "Handling disconnection");
+            // Close socket and interrupt threads
+            // Notify listener
+            if (listener != null) {
+                Log.d(TAG, "on connection fail called");
+                listener.onConnectionFail();
+            }
+            disconnect();
+        }
     }
 
     private boolean isClientDevice() {
@@ -539,13 +621,21 @@ class WifiDevice extends Device {
     }
 
     public void disconnect() {
+        if (isDisconnected.get()) return;
+        isDisconnected.set(true);
+
         if (socket != null) {
+            Log.d(TAG, "closing socket");
             try {
                 socket.close();
             } catch (IOException e) {
                 Log.e(TAG, "could not close socket" + e);
             }
         }
+
+        // Interrupt monitoring threads
+        if (heartbeatSender != null) heartbeatSender.interrupt();
+        if (watchdog != null) watchdog.interrupt();
     }
 
     public void connect(Listener listener, UUID selfId, Socket socket) {
@@ -555,6 +645,7 @@ class WifiDevice extends Device {
             return;
         }
 
+        this.listener = listener;
         this.socket = socket;
 
         new Thread(() -> {
@@ -571,24 +662,44 @@ class WifiDevice extends Device {
 
                 Log.d(TAG, "completed uuid exchange with:" + uuid);
                 listener.onConnectionSucceeded();
+
+                startHeartbeatMechanism();
+
                 DataInputStream inputStream = new DataInputStream(socket.getInputStream());
-                while (true) {
-                    byte[] sizeBytes = new byte[4];
-                    inputStream.readFully(sizeBytes);
-                    Log.d(TAG, "Raw size bytes: " + Arrays.toString(sizeBytes));
-                    int size = ByteBuffer.wrap(sizeBytes).getInt();
-                    if (size < 0 || size > 1024 * 1024) {
-                        throw new IOException("Invalid data size: " + size);
+                while (!isDisconnected.get()) {
+                    try {
+                        byte[] sizeBytes = new byte[4];
+                        inputStream.readFully(sizeBytes);
+                        int size = ByteBuffer.wrap(sizeBytes).getInt();
+
+                        // Update last received time for ANY message
+                        lastReceivedTime = System.currentTimeMillis();
+
+                        if (size == HEARTBEAT_SIGNAL) {
+                            Log.d(TAG, "Received heartbeat from " + uuid);
+                            continue;  // Skip processing for heartbeats
+                        }
+
+                        if (size < 0 || size > 1024 * 1024) {
+                            throw new IOException("Invalid data size: " + size);
+                        }
+
+                        byte[] data = new byte[size];
+                        inputStream.readFully(data);
+                        Log.d(TAG, "received data:" + Arrays.toString(data));
+                        listener.onData(data);
+                    } catch (SocketTimeoutException ste) {
+                        Log.e(TAG, "Socket timeout", ste);
+                        handleDisconnection();
+                    } catch (EOFException eof) {
+                        Log.e(TAG, "Connection closed by peer", eof);
+                        handleDisconnection();
                     }
-                    byte[] data = new byte[size];
-                    inputStream.readFully(data);
-                    Log.d(TAG, "received data:" + Arrays.toString(data));
-                    listener.onData(data);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "connection failed:" + e);
             } finally {
-                listener.onConnectionFail();
+                handleDisconnection();
 //                try {
 //                    if (socket != null) {
 //                        socket.close();
@@ -618,8 +729,9 @@ class WifiDevice extends Device {
     }
 
     public boolean send(byte[] data) {
-        if (socket == null || uuid == null) {
-            Log.d(TAG, "cant send because socketIsNull=" + (socket == null) + " uuidIsNull=" + (uuid == null));
+        if (isDisconnected.get() || socket == null || uuid == null) {
+            Log.d(TAG, "cant send because socketIsNull=" + (socket == null) + " uuidIsNull=" + (uuid == null) + "isDisconnected=" + isDisconnected.get());
+            handleDisconnection();
             return false;
         }
 
