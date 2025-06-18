@@ -82,7 +82,8 @@ public class Router {
                 }
             } catch (SendError e) {
                 //Silent error in case other neighbors have successfully sent
-                Log.e(TAG, "Error sending data: " + e.getMessage());
+                Log.e(TAG, "Error sending data: " + e);
+                e.printStackTrace();
             }
         }
         if (!hasAttemptedSending) {

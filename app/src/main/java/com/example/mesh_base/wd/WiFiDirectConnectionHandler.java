@@ -20,8 +20,8 @@ import com.example.mesh_base.global_interfaces.Device;
 import com.example.mesh_base.global_interfaces.SendError;
 
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -41,8 +41,10 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
     private final int SERVER_PORT = 50000;
     private NsdManager nsdManager;
     private NsdManager.DiscoveryListener discoveryListener;
+    private NsdManager.RegistrationListener registrationListener;
     private String SERVICE_NAME_PREFIX = "MeshBase|";
     private HashMap<UUID, WifiDevice> connectedDevices = new HashMap<>();
+    private ServerSocket serverSocket;
 
     private volatile boolean running = false;
     // Connected peers and sockets
@@ -134,7 +136,7 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
                             return;
                         }
 
-                        device.connect(getConnectListener(device), id, true);
+                        device.connect(getConnectListener(device), id);
                     }
                 });
             }
@@ -149,40 +151,6 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener);
     }
 
-    private void handleAcceptedClient(WifiDevice device, Socket clientSocket, UUID selfId) {
-        new Thread(() -> {
-            try {
-                device.setSocket(clientSocket); // Set the socket directly
-                // Perform UUID exchange (server-side: receive first, then send)
-                device.receiveAndStoreUUID();
-                device.sendUUID(selfId);
-                Log.d(TAG, "Completed UUID exchange with: " + device.uuid);
-                getConnectListener(device).onConnectionSucceeded();
-
-                // Start listening for data
-                try (DataInputStream inputStream = new DataInputStream(clientSocket.getInputStream())) {
-                    while (true) {
-                        int size = inputStream.readInt();
-                        byte[] data = new byte[size];
-                        inputStream.readFully(data);
-                        Log.d(TAG, "received data: " + Arrays.toString(data));
-                        getConnectListener(device).onData(data);
-                    }
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Client handling failed: " + e);
-                getConnectListener(device).onConnectionFail();
-            } finally {
-                try {
-                    if (clientSocket != null && !clientSocket.isClosed()) {
-                        clientSocket.close();
-                    }
-                } catch (IOException e) {
-                    Log.e(TAG, "Could not close client socket: " + e);
-                }
-            }
-        }).start();
-    }
 
     private WifiDevice.Listener getConnectListener(WifiDevice device) {
         return new WifiDevice.Listener() {
@@ -193,14 +161,20 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
 
             @Override
             public void onConnectionFail() {
-                connectedDevices.remove(device.uuid, device);
-                onNeighborDisconnected(device);
+                if (connectedDevices.containsKey(device.uuid)) {
+                    connectedDevices.remove(device.uuid, device);
+                    onNeighborDisconnected(device);
+                }
             }
 
             @Override
             public void onConnectionSucceeded() {
-                connectedDevices.put(device.uuid, device);
-                onNeighborConnected(device);
+                if (connectedDevices.containsKey(device.uuid)) {
+                    device.disconnect();
+                } else {
+                    connectedDevices.put(device.uuid, device);
+                    onNeighborConnected(device);
+                }
             }
         };
     }
@@ -211,7 +185,8 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         serviceInfo.setServiceType(SERVICE_TYPE);
         serviceInfo.setPort(AD_PORT);
 
-        nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, new NsdManager.RegistrationListener() {
+        registrationListener = new NsdManager.RegistrationListener() {
+
             @Override
             public void onRegistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
                 Log.e(TAG, "Registration failed: " + errorCode);
@@ -231,24 +206,36 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
             public void onServiceUnregistered(NsdServiceInfo serviceInfo) {
                 Log.d(TAG, "Service unregistered");
             }
-        });
+        };
+
+        nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener);
     }
 
     private void startAcceptingClients() {
         new Thread(() -> {
-            try (ServerSocket socket = new ServerSocket(SERVER_PORT);) {
-                socket.setReuseAddress(true);
+            try {
+                serverSocket = new ServerSocket(SERVER_PORT);
+                serverSocket.setReuseAddress(true);
                 Log.d(TAG, "server socket started");
                 while (true) {
-                    Socket clientSocket = socket.accept();
+                    Socket clientSocket = serverSocket.accept();
                     Log.d(TAG, "client socket accepted");
                     InetAddress ip = clientSocket.getInetAddress();
                     String name = "WifiDev:" + ip.toString();
-                    WifiDevice device = new WifiDevice(name, ip, SERVER_PORT);
-                    handleAcceptedClient(device, clientSocket, id);
+                    WifiDevice device = new WifiDevice(name, ip);
+                    device.connect(getConnectListener(device), id, clientSocket);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "could not create server socket:" + e);
+            } finally {
+                try {
+                    if (serverSocket != null && !serverSocket.isClosed()) {
+                        serverSocket.close();
+                        Log.d(TAG, "server socket closed");
+                    }
+                } catch (IOException e) {
+                    Log.e(TAG, "could not close server socket: " + e);
+                }
             }
         }).start();
     }
@@ -292,6 +279,25 @@ public class WiFiDirectConnectionHandler extends ConnectionHandler {
         if (discoveryListener != null) {
             nsdManager.stopServiceDiscovery(discoveryListener);
         }
+        if (registrationListener != null) {
+            nsdManager.unregisterService(registrationListener);
+        }
+
+        try {
+            if (serverSocket != null && !serverSocket.isClosed()) {
+                serverSocket.close();
+                Log.d(TAG, "server socket closed in stop");
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "could not close server socket in stop: " + e);
+        }
+
+        for (WifiDevice neighbor : connectedDevices.values()) {
+            neighbor.disconnect();
+            onNeighborDisconnected(neighbor);
+        }
+        connectedDevices.clear();
+
         onDisconnected();
     }
 
@@ -460,16 +466,39 @@ class WifiDirectPermissions {
 
 class WifiDevice extends Device {
     private final String TAG;
-    private final int port;
+    private int port = 0;
     private InetAddress ip;
     private Socket socket;
     private Listener listener;
 
+    /**
+     * Constructor for a server device
+     *
+     * @param name
+     * @param ip
+     * @param port
+     */
     public WifiDevice(String name, InetAddress ip, int port) {
         super(null, name);
         TAG = "my_wifidevice:" + name;
         this.port = port;
         this.ip = ip;
+    }
+
+    /**
+     * Constructor for a client device
+     *
+     * @param name
+     * @param ip
+     */
+    public WifiDevice(String name, InetAddress ip) {
+        super(null, name);
+        TAG = "my_wifidevice:" + name;
+        this.ip = ip;
+    }
+
+    private boolean isClientDevice() {
+        return port == 0;
     }
 
     public UUID bytesToUUID(byte[] bytes) {
@@ -509,21 +538,30 @@ class WifiDevice extends Device {
         Log.d(TAG, "Resolved Bytes ... " + bytesToUUID(uuidBytes));
     }
 
-    public void connect(Listener listener, UUID selfId, boolean asClient) {
-        Log.d(TAG, "trying to connect to " + name);
+    public void disconnect() {
+        if (socket != null) {
+            try {
+                socket.close();
+            } catch (IOException e) {
+                Log.e(TAG, "could not close socket" + e);
+            }
+        }
+    }
+
+    public void connect(Listener listener, UUID selfId, Socket socket) {
+        Log.d(TAG, "trying to connect to " + name + "which is a client=" + isClientDevice());
         if (this.listener != null) {
             Log.e(TAG, "should not connect twice");
             return;
         }
 
-        this.listener = listener;
+        this.socket = socket;
+
         new Thread(() -> {
             try {
-                socket = new Socket(ip, port);
                 Log.d(TAG, "socket opened with:" + ip);
-                listener.onConnectionSucceeded();
 
-                if (asClient) {
+                if (isClientDevice()) {
                     sendUUID(selfId);
                     receiveAndStoreUUID();
                 } else {
@@ -532,9 +570,16 @@ class WifiDevice extends Device {
                 }
 
                 Log.d(TAG, "completed uuid exchange with:" + uuid);
+                listener.onConnectionSucceeded();
                 DataInputStream inputStream = new DataInputStream(socket.getInputStream());
                 while (true) {
-                    int size = inputStream.readInt();
+                    byte[] sizeBytes = new byte[4];
+                    inputStream.readFully(sizeBytes);
+                    Log.d(TAG, "Raw size bytes: " + Arrays.toString(sizeBytes));
+                    int size = ByteBuffer.wrap(sizeBytes).getInt();
+                    if (size < 0 || size > 1024 * 1024) {
+                        throw new IOException("Invalid data size: " + size);
+                    }
                     byte[] data = new byte[size];
                     inputStream.readFully(data);
                     Log.d(TAG, "received data:" + Arrays.toString(data));
@@ -544,20 +589,32 @@ class WifiDevice extends Device {
                 Log.e(TAG, "connection failed:" + e);
             } finally {
                 listener.onConnectionFail();
-                try {
-                    if (socket != null) {
-                        socket.close();
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "could not close socket:" + e);
-                }
+//                try {
+//                    if (socket != null) {
+//                        socket.close();
+//                    }
+//                } catch (Exception e) {
+//                    Log.e(TAG, "could not close socket:" + e);
+//                }
             }
-
         }).start();
     }
 
-    public void setSocket(Socket socket) {
-        this.socket = socket;
+    public void connect(Listener listener, UUID selfId) {
+        Log.d(TAG, "trying to connect to " + name + "which is a client=" + isClientDevice());
+        if (this.listener != null) {
+            Log.e(TAG, "should not connect twice");
+            return;
+        }
+
+        try {
+            socket = new Socket(ip, port);
+        } catch (IOException e) {
+            Log.e(TAG, "could not create socket for server" + e);
+            listener.onConnectionFail();
+        }
+
+        connect(listener, selfId, socket);
     }
 
     public boolean send(byte[] data) {
@@ -568,21 +625,24 @@ class WifiDevice extends Device {
 
         new Thread(() -> {
             try {
-                OutputStream outputStream = socket.getOutputStream();
-                outputStream.write(data.length);
-                outputStream.write(data);
+                DataOutputStream outputStream = new DataOutputStream(socket.getOutputStream());
+                byte[] combined = new byte[4 + data.length];
+                ByteBuffer buffer = ByteBuffer.wrap(combined);
+                buffer.putInt(data.length);
+                buffer.put(data);
+                Log.d(TAG, "Sending combined bytes: " + Arrays.toString(combined));
+                outputStream.write(combined);
                 outputStream.flush();
-                Log.d(TAG, "send data:" + Arrays.toString(data));
             } catch (Exception e) {
                 Log.e(TAG, "sending failed" + e);
                 listener.onConnectionFail();
-                try {
-                    if (socket != null) {
-                        socket.close();
-                    }
-                } catch (Exception e2) {
-                    Log.e(TAG, "could not close socket after send fail:" + e2);
-                }
+//                try {
+//                    if (socket != null) {
+//                        socket.close();
+//                    }
+//                } catch (Exception e2) {
+//                    Log.e(TAG, "could not close socket after send fail:" + e2);
+//                }
             }
         }
         ).start();

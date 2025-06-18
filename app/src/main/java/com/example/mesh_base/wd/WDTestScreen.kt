@@ -60,11 +60,19 @@ fun WDTestScreen(meshManager: MeshManager) {
 
             val listener = object : MeshManagerListener() {
                 override fun onDataReceivedForSelf(protocol: MeshProtocol<*>) {
-                    Log.d(TAG, "received data")
+                    Log.d(TAG, "received data");
                     if (protocol.byteType === ProtocolType.SEND_MESSAGE) {
                         @Suppress("UNCHECKED_CAST")
                         val sendProtocol = protocol as MeshProtocol<SendMessageBody>
 
+                        Log.d(TAG, "received data" + sendProtocol.body.msg);
+                        Handler(Looper.getMainLooper()).post {
+                            Toast.makeText(
+                                context,
+                                sendProtocol.body.msg,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                         val response: MeshProtocol<SendMessageBody> = ConcreteMeshProtocol(
                             1, -1, protocol.messageId, meshManager.id, protocol.sender,
                             SendMessageBody(4, false, "a reply to ${sendProtocol.body.msg}")
